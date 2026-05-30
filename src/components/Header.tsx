@@ -7,6 +7,7 @@ import ViewportTooltip from './ViewportTooltip'
 import HelpModal from './HelpModal'
 import HistoryModal from './HistoryModal'
 import { EditIcon, HelpCircleIcon, HistoryIcon, InstallIcon, SettingsIcon } from './icons'
+import logoUrl from '../assets/logo.png'
 
 type BeforeInstallPromptEvent = Event & {
   prompt: () => Promise<void>
@@ -149,12 +150,13 @@ export default function Header() {
           <div className="flex-1 min-w-0 pr-2 flex items-center gap-2">
             <h1 className="inline-flex items-start relative mr-2">
               <a
-                href="https://github.com/CookSleep/gpt_image_playground"
+                href="https://www.ai-link.shop"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
+                className="inline-flex items-center gap-2 text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               >
-                GPT Image Playground
+                <img src={logoUrl} alt="Logo" className="h-6 w-6 sm:h-7 sm:w-7 object-contain" draggable={false} />
+                <span>AI Link Image</span>
               </a>
               {hasUpdate && latestRelease && (
                 <a
