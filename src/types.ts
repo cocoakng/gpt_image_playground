@@ -13,7 +13,7 @@ export const ZIP_DOWNLOAD_ROUTE_VALUES = [
 ] as const
 export type ZipDownloadRoute = typeof ZIP_DOWNLOAD_ROUTE_VALUES[number]
 export const DEFAULT_ZIP_DOWNLOAD_ROUTES: ZipDownloadRoute[] = ['task-selection', 'favorite-collection-selection']
-export type BuiltInApiProvider = 'openai' | 'fal'
+export type BuiltInApiProvider = 'openai' | 'fal' | 'volcengine'
 export type ApiProvider = BuiltInApiProvider | string
 export type CustomProviderTemplate = 'http-image'
 export const DEFAULT_STREAM_PARTIAL_IMAGES = 1
@@ -131,6 +131,35 @@ export const DEFAULT_PARAMS: TaskParams = {
   n: 1,
 }
 
+// ===== 视频参数 =====
+
+export interface VideoParams {
+  resolution: '720p' | '1080p'
+  duration: '5s' | '10s'
+  ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4'
+}
+
+export const DEFAULT_VIDEO_PARAMS: VideoParams = {
+  resolution: '720p',
+  duration: '5s',
+  ratio: '16:9',
+}
+
+// ===== 火山引擎视频响应 =====
+
+export interface VolcengineTaskResponse {
+  id: string
+  status: 'submitted' | 'queued' | 'running' | 'succeed' | 'failed'
+  content?: {
+    video_url: string
+    cover_image_url: string
+  }
+  error?: {
+    code: string
+    message: string
+  }
+}
+
 // ===== 输入图片（UI 层面） =====
 
 export interface InputImage {
@@ -174,6 +203,16 @@ export interface TaskRecord {
   customTaskId?: string
   /** 自定义异步任务是否等待自动恢复 */
   customRecoverable?: boolean
+  /** 火山引擎视频任务 ID */
+  volcengineTaskId?: string
+  /** 火山引擎视频任务是否等待自动恢复 */
+  volcengineRecoverable?: boolean
+  /** 视频 URL（不持久化，仅缓存，24h 过期） */
+  videoUrl?: string
+  /** 封面图在 IndexedDB 中的 id */
+  coverImageId?: string
+  /** 视频参数 */
+  videoParams?: VideoParams
   /** API 返回的实际生效参数，用于标记与请求值不一致的情况 */
   actualParams?: Partial<TaskParams>
   /** 输出图片对应的实际生效参数，key 为 outputImages 中的图片 id */

@@ -12,7 +12,7 @@ import { downloadImageEntriesAsZip, downloadImageIds, getImageZipEntries } from 
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
 import { replaceImageMentionsForApi } from '../lib/promptImageMentions'
 import { CloseIcon, CodeIcon, CopyIcon, DownloadIcon, EditIcon, LinkIcon, TrashIcon } from './icons'
-
+import VideoPlayer from './VideoPlayer'
 import ViewportTooltip from './ViewportTooltip'
 
 export default function DetailModal() {
@@ -28,6 +28,7 @@ export default function DetailModal() {
   const dismissedCodexCliPrompts = useStore((s) => s.dismissedCodexCliPrompts)
   const streamPreviewSrc = useStore((s) => detailTaskId ? s.streamPreviews[detailTaskId] || '' : '')
   const streamPreviewSlots = useStore((s) => detailTaskId ? s.streamPreviewSlots[detailTaskId] : undefined)
+  const videoCoverPreview = useStore((s) => detailTaskId ? s.videoCoverPreviews[detailTaskId] || '' : '')
 
   const [imageIndex, setImageIndex] = useState(0)
   const [imageSrcs, setImageSrcs] = useState<Record<string, string>>({})
@@ -335,6 +336,18 @@ export default function DetailModal() {
     }
   }
 
+  const handleDownloadVideo = () => {
+    if (!task?.videoUrl) return
+    const a = document.createElement('a')
+    a.href = task.videoUrl
+    a.download = `video-${task.id}.mp4`
+    a.target = '_blank'
+    a.rel = 'noopener noreferrer'
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+  }
+
   const handleDownloadAllOutputs = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!task?.outputImages?.length) return
@@ -446,6 +459,15 @@ export default function DetailModal() {
                   </ViewportTooltip>
                 </div>
               )}
+            </div>
+          )}
+          {task.status === 'done' && task.videoUrl && (
+            <div className="relative w-full max-w-2xl mx-auto">
+              <VideoPlayer
+                videoUrl={task.videoUrl}
+                coverUrl={videoCoverPreview || undefined}
+                className="max-h-[80vh]"
+              />
             </div>
           )}
           {task.status === 'done' && outputLen > 0 && currentOutputPreviewSrc && (
@@ -767,6 +789,16 @@ export default function DetailModal() {
               <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-4">
                 {task.prompt || '(无提示词)'}
               </p>
+            )}
+            {task.videoUrl && (
+              <button
+                onClick={handleDownloadVideo}
+                className="mb-4 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium"
+                title="下载视频"
+              >
+                <DownloadIcon className="h-4 w-4" />
+                下载视频
+              </button>
             )}
             {showRevisedPrompt && currentRevisedPrompt && (
               <div className="mb-4">

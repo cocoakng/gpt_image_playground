@@ -9,6 +9,7 @@ import type {
   AppSettings,
   AppMode,
   TaskParams,
+  VideoParams,
   InputImage,
   MaskDraft,
   TaskRecord,
@@ -17,7 +18,7 @@ import type {
   ResponsesApiResponse,
   ResponsesOutputItem,
 } from './types'
-import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS } from './types'
+import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS, DEFAULT_VIDEO_PARAMS } from './types'
 import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
@@ -48,6 +49,8 @@ import { showBrowserNotification } from './lib/browserNotification'
 import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
+import { submitVideoTask, cancelVideoTask, getPollingVideoTaskIds } from './lib/videoTaskExecutor'
+import { VIDEO_POLL_INTERVAL_MS } from './lib/volcengineVideoApi'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
@@ -76,6 +79,7 @@ const AGENT_INPUT_DRAFT_RETENTION_MS = 3 * 24 * 60 * 60 * 1000
 const AGENT_ROUND_IMAGE_MENTION_RE = /@(?:第)?(\d+)轮图(\d+)/g
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+const videoRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const agentRoundControllers = new Map<string, AbortController>()
 let agentConversationPersistenceReady = false
@@ -808,6 +812,8 @@ interface AppState {
   // 参数
   params: TaskParams
   setParams: (p: Partial<TaskParams>) => void
+  videoParams: VideoParams
+  setVideoParams: (p: VideoParams) => void
   reusedTaskApiProfileId: string | null
   reusedTaskApiProfileName: string | null
   reusedTaskApiProfileMissing: boolean
@@ -855,6 +861,8 @@ interface AppState {
   streamPreviews: Record<string, string>
   streamPreviewSlots: Record<string, Record<string, string>>
   setTaskStreamPreview: (taskId: string, image?: string, requestIndex?: number) => void
+  videoCoverPreviews: Record<string, string>
+  setTaskVideoCoverPreview: (taskId: string, preview?: string) => void
 
   // 搜索和筛选
   searchQuery: string
@@ -1512,6 +1520,21 @@ export const useStore = create<AppState>()(
         delete nextSlots[taskId]
         return { streamPreviews: next, streamPreviewSlots: nextSlots }
       }),
+      videoCoverPreviews: {},
+      setTaskVideoCoverPreview: (taskId, preview) => set((s) => {
+        if (preview) {
+          if (s.videoCoverPreviews[taskId] === preview) return s
+          return { videoCoverPreviews: { ...s.videoCoverPreviews, [taskId]: preview } }
+        }
+        if (!(taskId in s.videoCoverPreviews)) return s
+        const next = { ...s.videoCoverPreviews }
+        delete next[taskId]
+        return { videoCoverPreviews: next }
+      }),
+
+      // Video params
+      videoParams: DEFAULT_VIDEO_PARAMS,
+      setVideoParams: (videoParams) => set({ videoParams }),
 
       // Search & Filter
       searchQuery: '',
@@ -1905,6 +1928,162 @@ function scheduleCustomRecovery(taskId: string, delayMs = CUSTOM_RECOVERY_POLL_M
   customRecoveryTimers.set(taskId, timer)
 }
 
+// ===== Video task recovery =====
+
+function clearVideoRecoveryTimer(taskId: string) {
+  const timer = videoRecoveryTimers.get(taskId)
+  if (timer) clearTimeout(timer)
+  videoRecoveryTimers.delete(taskId)
+}
+
+function scheduleVideoRecoveryFn(taskId: string, delayMs = VIDEO_POLL_INTERVAL_MS) {
+  if (videoRecoveryTimers.has(taskId)) return
+  const timer = setTimeout(() => {
+    videoRecoveryTimers.delete(taskId)
+    recoverVideoTask(taskId)
+  }, delayMs)
+  videoRecoveryTimers.set(taskId, timer)
+}
+
+function getVideoRecoveryProfile(task: TaskRecord): ApiProfile | null {
+  const { settings } = useStore.getState()
+  const profiles = settings.profiles ?? []
+  const profile = profiles.find((p) => p.id === task.apiProfileId) ?? null
+  if (profile && profile.provider === 'volcengine') return profile
+  // Try to find any volcengine profile
+  for (const p of profiles) {
+    if (p.provider === 'volcengine') return p
+  }
+  return null
+}
+
+async function recoverVideoTask(taskId: string) {
+  const { tasks } = useStore.getState()
+  const task = tasks.find((item) => item.id === taskId)
+  if (!task || task.apiProvider !== 'volcengine' || !task.volcengineTaskId || task.status === 'done') return
+
+  const profile = getVideoRecoveryProfile(task)
+  if (!profile) {
+    scheduleVideoRecoveryFn(taskId)
+    return
+  }
+
+  try {
+    const { getVolcengineQueuedVideoResult } = await import('./lib/volcengineVideoApi')
+    const result = await getVolcengineQueuedVideoResult(task.volcengineTaskId, profile)
+
+    const coverImageId = result.coverImageUrl
+      ? await storeCoverImageToDb(result.coverImageUrl)
+      : null
+
+    updateTaskInStore(taskId, {
+      videoUrl: result.videoUrl,
+      coverImageId: coverImageId ?? undefined,
+      status: 'done',
+      volcengineRecoverable: false,
+      finishedAt: Date.now(),
+      elapsed: Date.now() - task.createdAt,
+    })
+
+    if (coverImageId) {
+      cacheImage(coverImageId, result.coverImageUrl)
+      useStore.getState().setTaskVideoCoverPreview(taskId, result.coverImageUrl)
+    }
+
+    clearVideoRecoveryTimer(taskId)
+    useStore.getState().showToast('视频任务已恢复', 'success')
+    if (!isAgentTask(task)) showTaskCompletionNotification('视频生成完成', '火山引擎视频任务已恢复。')
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    // If task is still running/queued, continue recovery
+    if (errorMessage.includes('仍在') || errorMessage.includes('submitted') ||
+        errorMessage.includes('queued') || errorMessage.includes('running')) {
+      scheduleVideoRecoveryFn(taskId, VIDEO_POLL_INTERVAL_MS)
+      return
+    }
+    clearVideoRecoveryTimer(taskId)
+    updateTaskInStore(taskId, {
+      status: 'error',
+      error: errorMessage,
+      volcengineRecoverable: false,
+      finishedAt: Date.now(),
+      elapsed: Date.now() - task.createdAt,
+    })
+  }
+}
+
+async function storeCoverImageToDb(url: string): Promise<string> {
+  try {
+    const response = await fetch(url, { cache: 'no-store' })
+    if (!response.ok) throw new Error(`封面图下载失败: HTTP ${response.status}`)
+    const blob = await response.blob()
+    const bytes = new Uint8Array(await blob.arrayBuffer())
+    let binary = ''
+    for (let i = 0; i < bytes.length; i += 0x8000) {
+      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+    }
+    const dataUrl = `data:${blob.type || 'image/png'};base64,${btoa(binary)}`
+    const imgId = await storeImage(dataUrl, 'generated')
+    cacheImage(imgId, dataUrl)
+    return imgId
+  } catch (err) {
+    console.error('Failed to store cover image:', err)
+    return ''
+  }
+}
+
+/** Execute a video task via the video task executor */
+async function executeVideoTaskFn(taskId: string, profile: ApiProfile) {
+  const task = useStore.getState().tasks.find((t) => t.id === taskId)
+  if (!task || !task.videoParams) return
+
+  await submitVideoTask({
+    prompt: task.prompt,
+    params: task.videoParams,
+    profile,
+    taskId,
+    model: task.apiModel,
+    inputImageIds: task.inputImageIds.length > 0 ? task.inputImageIds : undefined,
+    onStatusUpdate: (id, patch) => {
+      updateTaskInStore(id, patch)
+      if (patch.volcengineTaskId) {
+        const t = useStore.getState().tasks.find((item) => item.id === id)
+        if (t) putTask(t)
+      }
+    },
+    onTaskComplete: async (id, videoUrl, coverImageId) => {
+      const t = useStore.getState().tasks.find((item) => item.id === id)
+      updateTaskInStore(id, {
+        videoUrl,
+        coverImageId: coverImageId || undefined,
+        status: 'done',
+        volcengineRecoverable: false,
+        finishedAt: Date.now(),
+        elapsed: Date.now() - (t?.createdAt ?? Date.now()),
+      })
+      if (coverImageId) {
+        const img = await getImage(coverImageId)
+        if (img?.dataUrl) {
+          cacheImage(coverImageId, img.dataUrl)
+          useStore.getState().setTaskVideoCoverPreview(id, img.dataUrl)
+        }
+      }
+      useStore.getState().showToast('视频生成完成', 'success')
+      if (t && !isAgentTask(t)) showTaskCompletionNotification('视频生成完成', '火山引擎视频任务已完成。')
+    },
+    onTaskError: (id, error) => {
+      const t = useStore.getState().tasks.find((item) => item.id === id)
+      updateTaskInStore(id, {
+        status: 'error',
+        error,
+        volcengineRecoverable: false,
+        finishedAt: Date.now(),
+        elapsed: Date.now() - (t?.createdAt ?? Date.now()),
+      })
+    },
+  })
+}
+
 function hasActualParams(params: Partial<TaskParams> | undefined): params is Partial<TaskParams> {
   return Boolean(params && Object.keys(params).length > 0)
 }
@@ -2092,6 +2271,13 @@ export async function initStore() {
       (task.status === 'running' || task.customRecoverable)
     ) {
       scheduleCustomRecovery(task.id, 0)
+    }
+    if (
+      task.apiProvider === 'volcengine' &&
+      task.volcengineTaskId &&
+      (task.status === 'running' || task.volcengineRecoverable)
+    ) {
+      scheduleVideoRecoveryFn(task.id, 0)
     }
   }
 
@@ -2332,6 +2518,24 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     createdAt: Date.now(),
     finishedAt: null,
     elapsed: null,
+  }
+
+  // Route to video task executor for volcengine provider
+  if (activeProfile.provider === 'volcengine') {
+    task.videoParams = useStore.getState().videoParams
+    task.volcengineRecoverable = false
+    useStore.getState().setTasks([task, ...useStore.getState().tasks])
+    await putTask(task)
+    showToast('视频任务已提交', 'success')
+
+    if (settings.clearInputAfterSubmit) {
+      useStore.getState().setPrompt('')
+      useStore.getState().clearInputImages()
+    }
+    useStore.getState().setReusedTaskApiProfile(null)
+
+    void executeVideoTaskFn(taskId, activeProfile)
+    return
   }
 
   const latestTasks = useStore.getState().tasks

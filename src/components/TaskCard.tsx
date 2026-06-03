@@ -79,6 +79,7 @@ export default function TaskCard({
   const settings = useStore((s) => s.settings)
   const openFavoritePicker = useStore((s) => s.openFavoritePicker)
   const streamPreviewSrc = useStore((s) => s.streamPreviews[task.id] || '')
+  const videoCoverPreview = useStore((s) => s.videoCoverPreviews[task.id] || '')
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
   const swipeResetTimerRef = useRef<number | null>(null)
   const suppressClickUntilRef = useRef(0)
@@ -296,7 +297,8 @@ export default function TaskCard({
   const showSwipeAction = swipeActionActive
   const isFalReconnecting = task.status === 'error' && task.falRecoverable
   const isCustomReconnecting = task.status === 'error' && task.customRecoverable
-  const showRunningTimer = task.status === 'running' || isFalReconnecting || isCustomReconnecting
+  const isVideoReconnecting = task.status === 'error' && task.volcengineRecoverable
+  const showRunningTimer = task.status === 'running' || isFalReconnecting || isCustomReconnecting || isVideoReconnecting
   const swipeBgClass = showSwipeAction
     ? swipeStartedSelected
       ? 'bg-gray-500 dark:bg-gray-600'
@@ -436,7 +438,7 @@ export default function TaskCard({
               <span className="text-xs text-gray-400 dark:text-gray-500">生成中...</span>
             </div>
           )}
-          {task.status === 'error' && isFalReconnecting && (
+          {task.status === 'error' && (isFalReconnecting || isCustomReconnecting || isVideoReconnecting) && (
             <div className="flex flex-col items-center gap-1 px-2">
               <svg
                 className="w-7 h-7 text-yellow-400"
@@ -456,7 +458,7 @@ export default function TaskCard({
               </span>
             </div>
           )}
-          {task.status === 'error' && !isFalReconnecting && (
+          {task.status === 'error' && !isFalReconnecting && !isCustomReconnecting && !isVideoReconnecting && (
             <div className="flex flex-col items-center gap-1 px-2">
               <svg
                 className={`w-7 h-7 ${isInterrupted ? 'text-yellow-400' : 'text-red-400'}`}
@@ -491,6 +493,24 @@ export default function TaskCard({
                   {task.outputImages.length}
                 </span>
               )}
+            </>
+          )}
+          {task.status === 'done' && task.videoUrl && !thumbSrc && videoCoverPreview && (
+            <>
+              <img
+                src={videoCoverPreview}
+                className="saveable-image w-full h-full object-cover"
+                loading="lazy"
+                alt=""
+              />
+              {/* Video play icon overlay */}
+              <div className="absolute inset-0 flex items-center justify-center bg-black/20">
+                <div className="h-10 w-10 rounded-full bg-white/90 flex items-center justify-center shadow-lg">
+                  <svg className="w-5 h-5 text-gray-900 ml-0.5" fill="currentColor" viewBox="0 0 24 24">
+                    <path d="M8 5v14l11-7z" />
+                  </svg>
+                </div>
+              </div>
             </>
           )}
           {task.status === 'done' && !thumbSrc && (
@@ -625,7 +645,7 @@ export default function TaskCard({
               onTouchEnd={(e) => e.stopPropagation()}
               onTouchCancel={(e) => e.stopPropagation()}
             >
-              {((task.status === 'error' && !isFalReconnecting) || settings.alwaysShowRetryButton) && (
+              {((task.status === 'error' && !isFalReconnecting && !isCustomReconnecting && !isVideoReconnecting) || settings.alwaysShowRetryButton) && (
                 <TaskActionButton
                   tooltip="重试任务"
                   onClick={() => retryTask(task)}
