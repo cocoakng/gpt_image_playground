@@ -1,10 +1,16 @@
-const CACHE_NAME = 'gpt-image-playground-v0.1.5'
-const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './pwa-icon.svg']
+const CACHE_NAME = 'ai-link-studio-v0.1.5'
+const APP_SHELL = ['./', './index.html', './manifest.webmanifest', './logo.png']
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => cache.addAll(APP_SHELL)),
   )
+  // 通知客户端有新版本正在安装
+  self.clients.matchAll().then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({ type: 'SW_UPDATE_AVAILABLE' })
+    })
+  })
   self.skipWaiting()
 })
 
@@ -14,7 +20,13 @@ self.addEventListener('activate', (event) => {
       Promise.all(keys.filter((key) => key !== CACHE_NAME).map((key) => caches.delete(key))),
     ),
   )
+  // 激活后通知所有客户端刷新
   self.clients.claim()
+  self.clients.matchAll({ type: 'window' }).then((clients) => {
+    clients.forEach((client) => {
+      client.postMessage({ type: 'SW_ACTIVATED' })
+    })
+  })
 })
 
 self.addEventListener('fetch', (event) => {

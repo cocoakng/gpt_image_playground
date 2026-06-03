@@ -22,12 +22,16 @@ export interface LatestRelease {
 }
 
 /**
- * 检查 GitHub 最新 Release 版本。
- * - 仅当最新 Release 版本高于当前 __APP_VERSION__ 时提示。
- * - 用户点击后调用 dismiss()，本次浏览期间不再提示（sessionStorage）。
- * - 刷新页面后重新检查。
+ * 检查最新版本。如需启用，取消注释下方 fetch 逻辑并配置你的 GitHub 仓库。
  */
 export function useVersionCheck() {
+  // 暂未配置版本检查仓库，静默跳过。
+  // 如需开启：将 REPO 改为你的仓库名，如 'your-username/your-repo'
+  // const REPO = 'your-username/your-repo'
+  // const API_URL = `https://api.github.com/repos/${REPO}/releases/latest`
+  return { hasUpdate: false, latestRelease: null as LatestRelease | null, dismiss: () => {} }
+
+  /*
   const [latestRelease, setLatestRelease] = useState<LatestRelease | null>(null)
   const [dismissed, setDismissed] = useState(() =>
     sessionStorage.getItem('version-dismissed') === 'true',
@@ -53,7 +57,7 @@ export function useVersionCheck() {
         }
       })
       .catch(() => {
-        /* 静默失败，不影响正常使用 */
+        // 静默失败，不影响正常使用
       })
 
     return () => {
@@ -69,4 +73,5 @@ export function useVersionCheck() {
   const hasUpdate = latestRelease !== null && !dismissed
 
   return { hasUpdate, latestRelease, dismiss }
+  */
 }
