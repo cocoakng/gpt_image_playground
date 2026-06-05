@@ -23,10 +23,13 @@ import {
   normalizeSettings,
   normalizeStreamPartialImages,
   switchApiProfileProvider,
+  createDefaultVideoProfile,
+  validateVideoProfile,
+  DEFAULT_VIDEO_PROFILE_ID,
 } from '../lib/apiProfiles'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
 import { requestBrowserNotificationPermission, type BrowserNotificationPermissionResult } from '../lib/browserNotification'
-import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type AppSettings, type CustomProviderDefinition, type ZipDownloadRoute } from '../types'
+import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type AppSettings, type CustomProviderDefinition, type ZipDownloadRoute, type VideoProfile } from '../types'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { DEFAULT_DROPDOWN_MAX_HEIGHT, getDropdownMaxHeight } from '../lib/dropdown'
@@ -291,6 +294,209 @@ profiles 中不要包含 apiKey（用户导入后自行填写）。
 
 ## 统一任务接口示例
 {"customProviders":[{"id":"custom-example-task","name":"示例任务服务商","submit":{"path":"images/generations","method":"POST","contentType":"json","body":{"model":"$profile.model","prompt":"$prompt","n":"$params.n","size":"$params.size","resolution":"2k","quality":"$params.quality","image_urls":"$inputImages.dataUrls"},"taskIdPath":"data.0.task_id"},"poll":{"path":"tasks/{task_id}","method":"GET","query":{"language":"zh"},"intervalSeconds":5,"statusPath":"data.status","successValues":["completed"],"failureValues":["failed","cancelled"],"errorPath":"data.error.message","result":{"imageUrlPaths":["data.result.images.*.url.*"],"b64JsonPaths":[]}}}],"profiles":[{"name":"示例任务服务商","provider":"custom-example-task","baseUrl":"","model":"gpt-image-2","apiMode":"images"}]}`
+
+function VideoConfigTab() {
+  const videoProfiles = useStore((s) => s.videoProfiles)
+  const activeVideoProfileId = useStore((s) => s.activeVideoProfileId)
+  const setVideoProfiles = useStore((s) => s.setVideoProfiles)
+  const setActiveVideoProfileId = useStore((s) => s.setActiveVideoProfileId)
+  const showToast = useStore((s) => s.showToast)
+  const setConfirmDialog = useStore((s) => s.setConfirmDialog)
+
+  const [editingId, setEditingId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState<Omit<VideoProfile, 'id'>>({ name: '', baseUrl: '', apiKey: '', model: '', timeout: DEFAULT_SETTINGS.profiles[0]?.timeout ?? 600 })
+
+  const activeProfile = videoProfiles.find((p) => p.id === activeVideoProfileId)
+
+  const handleAdd = () => {
+    const newProfile = createDefaultVideoProfile({
+      id: newId('video'),
+      name: `新配置 ${videoProfiles.length + 1}`,
+    })
+    setVideoProfiles([...videoProfiles, newProfile])
+    setActiveVideoProfileId(newProfile.id)
+    setEditingId(newProfile.id)
+    setEditForm({
+      name: newProfile.name,
+      baseUrl: newProfile.baseUrl,
+      apiKey: newProfile.apiKey,
+      model: newProfile.model,
+      timeout: newProfile.timeout,
+    })
+  }
+
+  const handleSelect = (id: string) => {
+    setActiveVideoProfileId(id)
+    showToast('已切换视频配置', 'success')
+  }
+
+  const handleEdit = (profile: VideoProfile) => {
+    setEditingId(profile.id)
+    setEditForm({
+      name: profile.name,
+      baseUrl: profile.baseUrl,
+      apiKey: profile.apiKey,
+      model: profile.model,
+      timeout: profile.timeout,
+    })
+  }
+
+  const handleSave = () => {
+    if (!editingId) return
+    const error = validateVideoProfile({ id: editingId, ...editForm })
+    if (error) {
+      showToast(error, 'error')
+      return
+    }
+    setVideoProfiles(videoProfiles.map((p) =>
+      p.id === editingId ? { id: editingId, ...editForm } : p,
+    ))
+    setEditingId(null)
+    showToast('已保存', 'success')
+  }
+
+  const handleDelete = (profile: VideoProfile) => {
+    setConfirmDialog({
+      title: '删除视频配置',
+      message: `确定要删除"${profile.name}"吗？`,
+      showCancel: true,
+      confirmText: '删除',
+      icon: 'copy',
+      action: () => {
+        const remaining = videoProfiles.filter((p) => p.id !== profile.id)
+        setVideoProfiles(remaining)
+        if (activeVideoProfileId === profile.id) {
+          setActiveVideoProfileId(remaining[0]?.id ?? '')
+        }
+        if (editingId === profile.id) setEditingId(null)
+      },
+    })
+  }
+
+  const handleCancelEdit = () => {
+    setEditingId(null)
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <div>
+          <h3 className="text-base font-semibold text-gray-800 dark:text-gray-200">视频 API 配置</h3>
+          <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">配置视频生成服务的连接信息（兼容 OpenAI 异步格式）</p>
+        </div>
+        <button
+          type="button"
+          onClick={handleAdd}
+          className="inline-flex items-center gap-1 rounded-lg bg-blue-500 px-3 py-1.5 text-sm font-medium text-white hover:bg-blue-600 transition-colors"
+        >
+          <PlusIcon className="w-4 h-4" />
+          添加配置
+        </button>
+      </div>
+
+      {videoProfiles.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-gray-200 dark:border-white/10 p-8 text-center text-gray-400 dark:text-gray-600">
+          <p className="text-sm">暂无视频配置</p>
+          <p className="mt-1 text-xs">点击上方"添加配置"开始</p>
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {videoProfiles.map((profile) => (
+            <div
+              key={profile.id}
+              className={`rounded-xl border p-3 transition-colors ${
+                profile.id === activeVideoProfileId
+                  ? 'border-blue-300 bg-blue-50/50 dark:border-blue-500/30 dark:bg-blue-500/10'
+                  : 'border-gray-200/60 bg-gray-50/50 dark:border-white/[0.05] dark:bg-white/[0.02]'
+              }`}
+            >
+              {editingId === profile.id ? (
+                <div className="space-y-3">
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">名称</span>
+                    <input
+                      type="text"
+                      value={editForm.name}
+                      onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">API 地址</span>
+                    <input
+                      type="text"
+                      value={editForm.baseUrl}
+                      onChange={(e) => setEditForm({ ...editForm, baseUrl: e.target.value })}
+                      placeholder="https://api.example.com/v1"
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">API Key</span>
+                    <input
+                      type="password"
+                      value={editForm.apiKey}
+                      onChange={(e) => setEditForm({ ...editForm, apiKey: e.target.value })}
+                      placeholder="sk-..."
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">模型</span>
+                    <input
+                      type="text"
+                      value={editForm.model}
+                      onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
+                      placeholder="video-model-v1"
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">超时（秒）</span>
+                    <input
+                      type="number"
+                      value={editForm.timeout}
+                      onChange={(e) => setEditForm({ ...editForm, timeout: parseInt(e.target.value) || 600 })}
+                      min={30}
+                      max={3600}
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                    />
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={handleSave} className="rounded-lg bg-blue-500 px-3 py-1.5 text-sm text-white hover:bg-blue-600">保存</button>
+                    <button type="button" onClick={handleCancelEdit} className="rounded-lg bg-gray-200 px-3 py-1.5 text-sm text-gray-700 hover:bg-gray-300 dark:bg-white/10 dark:text-gray-300 dark:hover:bg-white/15">取消</button>
+                  </div>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => handleSelect(profile.id)}
+                    className="flex-1 text-left min-w-0"
+                  >
+                    <div className="flex items-center gap-2">
+                      <span className={`inline-block h-2 w-2 rounded-full ${profile.id === activeVideoProfileId ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
+                      <span className="font-medium text-sm text-gray-800 dark:text-gray-200 truncate">{profile.name}</span>
+                    </div>
+                    <div className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 truncate font-mono">
+                      {profile.model || '未设置模型'}
+                    </div>
+                  </button>
+                  <button type="button" onClick={() => handleEdit(profile)} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10" title="编辑">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>
+                  </button>
+                  <button type="button" onClick={() => handleDelete(profile)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10" title="删除">
+                    <TrashIcon className="w-4 h-4" />
+                  </button>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export default function SettingsModal() {
   const showSettings = useStore((s) => s.showSettings)
@@ -1181,6 +1387,15 @@ export default function SettingsModal() {
                 Agent 配置
               </button>
               <button
+                onClick={() => setActiveTab('video')}
+                className={`whitespace-nowrap flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-colors ${activeTab === 'video' ? 'bg-white dark:bg-white/[0.08] shadow-sm text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/[0.04]'}`}
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+                视频配置
+              </button>
+              <button
                 onClick={() => setActiveTab('data')}
                 className={`whitespace-nowrap flex-shrink-0 flex items-center gap-2.5 px-3 py-2.5 text-sm rounded-xl transition-colors ${activeTab === 'data' ? 'bg-white dark:bg-white/[0.08] shadow-sm text-blue-600 dark:text-blue-400 font-medium' : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100/80 dark:hover:bg-white/[0.04]'}`}
               >
@@ -1878,7 +2093,9 @@ export default function SettingsModal() {
               )}
             </div>
             )}
-            
+
+            {activeTab === 'video' && <VideoConfigTab />}
+
             {activeTab === 'data' && (
               <div className="space-y-4">
                 <div className="rounded-2xl bg-gray-50/80 p-4 border border-gray-200/60 dark:bg-white/[0.02] dark:border-white/[0.05] flex items-start gap-3">

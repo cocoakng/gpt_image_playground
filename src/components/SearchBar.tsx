@@ -3,14 +3,28 @@ import Select from './Select'
 import { ChevronLeftIcon, FavoriteIcon, CollectionManageIcon } from './icons'
 
 export default function SearchBar() {
-  const searchQuery = useStore((s) => s.searchQuery)
-  const setSearchQuery = useStore((s) => s.setSearchQuery)
+  const appMode = useStore((s) => s.appMode)
+  const isVideoMode = appMode === 'video'
+  const searchQuery = isVideoMode
+    ? useStore((s) => s.searchVideoQuery)
+    : useStore((s) => s.searchQuery)
+  const setSearchQuery = isVideoMode
+    ? useStore((s) => s.setSearchVideoQuery)
+    : useStore((s) => s.setSearchQuery)
   const filterStatus = useStore((s) => s.filterStatus)
   const setFilterStatus = useStore((s) => s.setFilterStatus)
-  const filterFavorite = useStore((s) => s.filterFavorite)
-  const setFilterFavorite = useStore((s) => s.setFilterFavorite)
-  const activeFavoriteCollectionId = useStore((s) => s.activeFavoriteCollectionId)
-  const setActiveFavoriteCollectionId = useStore((s) => s.setActiveFavoriteCollectionId)
+  const filterFavorite = isVideoMode
+    ? useStore((s) => s.filterVideoFavorite)
+    : useStore((s) => s.filterFavorite)
+  const setFilterFavoriteState = isVideoMode
+    ? useStore((s) => s.setFilterVideoFavorite)
+    : useStore((s) => s.setFilterFavorite)
+  const activeFavoriteCollectionId = isVideoMode
+    ? useStore((s) => s.activeVideoFavoriteCollectionId)
+    : useStore((s) => s.activeFavoriteCollectionId)
+  const setActiveFavoriteCollectionId = isVideoMode
+    ? (id: string | null) => useStore.setState({ activeVideoFavoriteCollectionId: id, selectedTaskIds: [], selectedFavoriteCollectionIds: [] })
+    : useStore((s) => s.setActiveFavoriteCollectionId)
   const openManageCollectionsModal = useStore((s) => s.openManageCollectionsModal)
   const inCollectionOverview = filterFavorite && !activeFavoriteCollectionId
 
@@ -19,7 +33,7 @@ export default function SearchBar() {
       setActiveFavoriteCollectionId(null)
       return
     }
-    setFilterFavorite(!filterFavorite)
+    setFilterFavoriteState(!filterFavorite)
   }
 
   return (

@@ -32,15 +32,17 @@ export default function TaskGrid() {
   const filteredTasks = useMemo(() => {
     const sorted = [...tasks].sort((a, b) => b.createdAt - a.createdAt)
     const q = searchQuery.trim().toLowerCase()
-    
+
     return sorted.filter((t) => {
+      // Gallery mode: exclude video tasks entirely
+      if (t.taskType === 'video') return false
       if (filterFavorite) {
         if (!t.isFavorite) return false
         if (activeFavoriteCollectionId && activeFavoriteCollectionId !== ALL_FAVORITES_COLLECTION_ID && !getTaskFavoriteCollectionIds(t).includes(activeFavoriteCollectionId)) return false
       }
       const matchStatus = filterStatus === 'all' || t.status === filterStatus
       if (!matchStatus) return false
-      
+
       if (!q) return true
       const prompt = (t.prompt || '').toLowerCase()
       const paramStr = JSON.stringify(t.params).toLowerCase()

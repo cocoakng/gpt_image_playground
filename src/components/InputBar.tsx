@@ -16,7 +16,6 @@ import { downloadImageEntriesAsZip, downloadImageIds, formatExportFileTime, getT
 import Select from './Select'
 import SizePickerModal from './SizePickerModal'
 import ViewportTooltip from './ViewportTooltip'
-import VideoParamsSelector from './VideoParamsSelector'
 import { CloseIcon } from './icons'
 
 
@@ -440,8 +439,6 @@ export default function InputBar() {
   const clearInputImages = useStore((s) => s.clearInputImages)
   const params = useStore((s) => s.params)
   const setParams = useStore((s) => s.setParams)
-  const videoParams = useStore((s) => s.videoParams)
-  const setVideoParams = useStore((s) => s.setVideoParams)
   const settings = useStore((s) => s.settings)
   const setSettings = useStore((s) => s.setSettings)
   const reusedTaskApiProfileId = useStore((s) => s.reusedTaskApiProfileId)
@@ -2407,16 +2404,7 @@ export default function InputBar() {
           <div className="mt-3">
             {/* 桌面端布局 */}
             <div className="hidden sm:flex items-end justify-between gap-3">
-              {activeProfile.provider === 'volcengine' ? (
-                <div className="flex-1">
-                  <VideoParamsSelector
-                    params={videoParams}
-                    onChange={setVideoParams}
-                  />
-                </div>
-              ) : (
-                renderParams('grid-cols-6')
-              )}
+              {renderParams('grid-cols-6')}
 
               <div className="flex gap-2 flex-shrink-0 mb-0.5">
                 <div
@@ -2475,14 +2463,7 @@ export default function InputBar() {
             <div className="sm:hidden flex flex-col gap-2">
               <div className={`collapse-section${mobileCollapsed ? ' collapsed' : ''}`}>
                 <div className="collapse-inner">
-                  {activeProfile.provider === 'volcengine' ? (
-                    <VideoParamsSelector
-                      params={videoParams}
-                      onChange={setVideoParams}
-                    />
-                  ) : (
-                    renderParams('grid-cols-2')
-                  )}
+                  {renderParams('grid-cols-2')}
                   <div className="h-2" />
                 </div>
               </div>

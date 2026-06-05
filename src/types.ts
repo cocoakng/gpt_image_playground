@@ -1,7 +1,7 @@
 // ===== 设置 =====
 
 export type ApiMode = 'images' | 'responses'
-export type AppMode = 'gallery' | 'agent'
+export type AppMode = 'gallery' | 'agent' | 'video'
 export type ReferenceImageEditAction = 'ask' | 'replace-reference' | 'add-mask'
 export const ZIP_DOWNLOAD_ROUTE_VALUES = [
   'task-selection',
@@ -83,6 +83,15 @@ export interface ApiProfile {
   providerDrafts?: Partial<Record<ApiProvider, Partial<Pick<ApiProfile, 'baseUrl' | 'model' | 'apiMode' | 'codexCli' | 'apiProxy' | 'responseFormatB64Json' | 'streamImages' | 'streamPartialImages'>>>>
 }
 
+export interface VideoProfile {
+  id: string
+  name: string
+  baseUrl: string
+  apiKey: string
+  model: string
+  timeout: number
+}
+
 export interface AppSettings {
   /** 旧版单配置字段：保留用于导入/查询参数兼容，实际请求以 active profile 为准 */
   baseUrl: string
@@ -109,6 +118,8 @@ export interface AppSettings {
   agentWebSearch: boolean
   profiles: ApiProfile[]
   activeProfileId: string
+  videoProfiles: VideoProfile[]
+  activeVideoProfileId: string
 }
 
 // ===== 任务参数 =====
@@ -134,16 +145,29 @@ export const DEFAULT_PARAMS: TaskParams = {
 // ===== 视频参数 =====
 
 export interface VideoParams {
-  resolution: '720p' | '1080p'
-  duration: '5s' | '10s'
-  ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4'
+  resolution: '480p' | '720p' | '1080p'
+  duration: number
+  ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '21:9' | 'adaptive'
+  /** 随机种子，用于可重复生成 */
+  seed?: number
+  /** 是否添加水印 */
+  watermark?: boolean
+  /** 是否自动生成音频（音画同步） */
+  generateAudio?: boolean
+  /** 是否固定镜头 */
+  cameraFixed?: boolean
 }
 
 export const DEFAULT_VIDEO_PARAMS: VideoParams = {
   resolution: '720p',
-  duration: '5s',
+  duration: 5,
   ratio: '16:9',
 }
+
+// ===== 视频模式 =====
+
+/** 视频生成模式：文生视频 / 图生视频-首帧 / 图生视频-首尾帧 */
+export type VideoMode = 'text' | 'first-frame' | 'first-last-frame'
 
 // ===== 火山引擎视频响应 =====
 
@@ -207,6 +231,14 @@ export interface TaskRecord {
   volcengineTaskId?: string
   /** 火山引擎视频任务是否等待自动恢复 */
   volcengineRecoverable?: boolean
+  /** 任务类型：image 或 video */
+  taskType?: 'image' | 'video'
+  /** 生成视频时使用的视频配置 ID */
+  videoProfileId?: string
+  /** 视频配置名称，用于展示 */
+  videoProfileName?: string
+  /** 视频模型名称 */
+  videoModel?: string
   /** 视频 URL（不持久化，仅缓存，24h 过期） */
   videoUrl?: string
   /** 封面图在 IndexedDB 中的 id */
@@ -262,6 +294,8 @@ export interface FavoriteCollection {
   name: string
   createdAt: number
   updatedAt: number
+  /** Collection type: 'image' for gallery mode, 'video' for video mode. Defaults to 'image' for backward compat. */
+  type?: 'image' | 'video'
 }
 
 // ===== Agent 模式 =====

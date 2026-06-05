@@ -10,6 +10,8 @@ import type {
   AppMode,
   TaskParams,
   VideoParams,
+  VideoMode,
+  VideoProfile,
   InputImage,
   MaskDraft,
   TaskRecord,
@@ -19,7 +21,7 @@ import type {
   ResponsesOutputItem,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS, DEFAULT_VIDEO_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile, getActiveVideoProfile, validateVideoProfile, createDefaultVideoProfile } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -49,8 +51,7 @@ import { showBrowserNotification } from './lib/browserNotification'
 import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
-import { submitVideoTask, cancelVideoTask, getPollingVideoTaskIds } from './lib/videoTaskExecutor'
-import { VIDEO_POLL_INTERVAL_MS } from './lib/volcengineVideoApi'
+import { submitVideoTask, cancelVideoTask, getPollingVideoTaskIds, VIDEO_POLL_INTERVAL_MS, type InputImageData } from './lib/videoTaskExecutor'
 import { validateMaskMatchesImage } from './lib/canvasImage'
 import { orderInputImagesForMask } from './lib/mask'
 import { getChangedParams, normalizeParamsForSettings } from './lib/paramCompatibility'
@@ -120,7 +121,7 @@ function isErrorToastTitle(title: string): boolean {
   return /(?:失败|错误|异常|报错|无法|不能|超时|中断|断开|请先|请输入|已达上限|不存在|已丢失)$/.test(title)
 }
 
-export type SettingsTab = 'general' | 'agent' | 'api' | 'data' | 'about'
+export type SettingsTab = 'general' | 'agent' | 'api' | 'video' | 'data' | 'about'
 
 const TIMEOUT_STREAMING_HINT = '也可尝试打开「流式传输」，并提高「请求中间步骤图像数」来维持连接。'
 const TIMEOUT_PARTIAL_IMAGES_ZERO_HINT = '官方流式接口不发送心跳，当前「请求中间步骤图像数」为 0，连接可能因无数据传输而断开。建议提高到 2 或 3。'
@@ -577,12 +578,13 @@ function normalizeFavoriteCollectionName(value: string) {
   return value.trim().replace(/\s+/g, ' ')
 }
 
-function createDefaultFavoriteCollection(now = Date.now()): FavoriteCollection {
+function createDefaultFavoriteCollection(now = Date.now(), type: 'image' | 'video' = 'image'): FavoriteCollection {
   return {
     id: DEFAULT_FAVORITE_COLLECTION_ID,
     name: DEFAULT_FAVORITE_COLLECTION_NAME,
     createdAt: now,
     updatedAt: now,
+    type,
   }
 }
 
@@ -599,11 +601,13 @@ function normalizeFavoriteCollections(value: unknown): FavoriteCollection[] {
     const name = normalizeFavoriteCollectionName(typeof item.name === 'string' ? item.name : '')
     if (!name) continue
     ids.add(id)
+    const itemType = (item.type === 'video' ? 'video' : 'image') as 'image' | 'video'
     normalized.push({
       id,
       name: name.slice(0, 60),
       createdAt: typeof item.createdAt === 'number' ? item.createdAt : now,
       updatedAt: typeof item.updatedAt === 'number' ? item.updatedAt : now,
+      type: itemType,
     })
   }
   return normalized
@@ -671,6 +675,9 @@ export function getPersistedState(state: AppState) {
   return {
     settings,
     params: state.params,
+    videoProfiles: state.videoProfiles,
+    activeVideoProfileId: state.activeVideoProfileId,
+    videoParams: state.videoParams,
     ...(settings.persistInputOnRestart && (state.appMode === 'gallery' || galleryInputDraft)
       ? {
           prompt: galleryInputDraft?.prompt ?? '',
@@ -722,7 +729,7 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
     typeof persisted.activeAgentConversationId === 'string' && (!hasPersistedAgentConversations || agentConversations.some((conversation) => conversation.id === persisted.activeAgentConversationId))
       ? persisted.activeAgentConversationId
       : agentConversations[0]?.id ?? null
-  const appMode = persisted.appMode === 'agent' ? 'agent' : 'gallery'
+  const appMode = persisted.appMode === 'agent' ? 'agent' : persisted.appMode === 'video' ? 'video' : 'gallery'
   const galleryInputDraft = settings.persistInputOnRestart
     ? normalizeAgentInputDraft(persisted.galleryInputDraft ?? {
         prompt: persisted.prompt,
@@ -814,6 +821,14 @@ interface AppState {
   setParams: (p: Partial<TaskParams>) => void
   videoParams: VideoParams
   setVideoParams: (p: VideoParams) => void
+  videoMode: VideoMode
+  setVideoMode: (mode: VideoMode) => void
+  videoProfiles: VideoProfile[]
+  setVideoProfiles: (profiles: VideoProfile[]) => void
+  activeVideoProfileId: string
+  setActiveVideoProfileId: (id: string) => void
+
+  // 复用图片任务配置
   reusedTaskApiProfileId: string | null
   reusedTaskApiProfileName: string | null
   reusedTaskApiProfileMissing: boolean
@@ -851,6 +866,7 @@ interface AppState {
   defaultFavoriteCollectionId: string | null
   setDefaultFavoriteCollectionId: (id: string | null) => void
   activeFavoriteCollectionId: string | null
+  activeVideoFavoriteCollectionId: string | null
   isManageCollectionsModalOpen: boolean
   setActiveFavoriteCollectionId: (id: string | null) => void
   openManageCollectionsModal: () => void
@@ -867,10 +883,14 @@ interface AppState {
   // 搜索和筛选
   searchQuery: string
   setSearchQuery: (q: string) => void
+  searchVideoQuery: string
+  setSearchVideoQuery: (q: string) => void
   filterStatus: 'all' | 'running' | 'done' | 'error'
   setFilterStatus: (status: AppState['filterStatus']) => void
   filterFavorite: boolean
   setFilterFavorite: (f: boolean) => void
+  filterVideoFavorite: boolean
+  setFilterVideoFavorite: (f: boolean) => void
 
   // 多选
   selectedTaskIds: string[]
@@ -1153,7 +1173,7 @@ export const useStore = create<AppState>()(
       // Mode
       appMode: 'gallery',
       setAppMode: (appMode) => {
-        if (appMode === 'gallery') {
+        if (appMode === 'gallery' || appMode === 'video') {
           const state = get()
           const agentInputDrafts = saveActiveAgentInputDrafts(state)
           const galleryInputDraft = saveGalleryInputDraft(state)
@@ -1486,6 +1506,7 @@ export const useStore = create<AppState>()(
           : state
       )),
       activeFavoriteCollectionId: null,
+      activeVideoFavoriteCollectionId: null,
       isManageCollectionsModalOpen: false,
       setActiveFavoriteCollectionId: (activeFavoriteCollectionId) => set({ activeFavoriteCollectionId, selectedTaskIds: [], selectedFavoriteCollectionIds: [] }),
       openManageCollectionsModal: () => set({ isManageCollectionsModalOpen: true }),
@@ -1535,14 +1556,32 @@ export const useStore = create<AppState>()(
       // Video params
       videoParams: DEFAULT_VIDEO_PARAMS,
       setVideoParams: (videoParams) => set({ videoParams }),
+      videoMode: 'text',
+      setVideoMode: (videoMode) => set((s) => s.videoMode === videoMode ? s : { videoMode, inputImages: [] }),
+
+      // Video profiles
+      videoProfiles: [],
+      setVideoProfiles: (videoProfiles) => set((st) => ({
+        videoProfiles,
+        settings: normalizeSettings({ ...st.settings, videoProfiles }),
+      })),
+      activeVideoProfileId: '',
+      setActiveVideoProfileId: (activeVideoProfileId) => set((st) => ({
+        activeVideoProfileId,
+        settings: normalizeSettings({ ...st.settings, activeVideoProfileId }),
+      })),
 
       // Search & Filter
       searchQuery: '',
       setSearchQuery: (searchQuery) => set({ searchQuery }),
+      searchVideoQuery: '',
+      setSearchVideoQuery: (searchVideoQuery) => set({ searchVideoQuery }),
       filterStatus: 'all',
       setFilterStatus: (filterStatus) => set({ filterStatus }),
       filterFavorite: false,
       setFilterFavorite: (filterFavorite) => set(filterFavorite ? { filterFavorite, selectedTaskIds: [], selectedFavoriteCollectionIds: [] } : { filterFavorite, activeFavoriteCollectionId: null, selectedTaskIds: [], selectedFavoriteCollectionIds: [] }),
+      filterVideoFavorite: false,
+      setFilterVideoFavorite: (filterVideoFavorite) => set(filterVideoFavorite ? { filterVideoFavorite, selectedTaskIds: [], selectedFavoriteCollectionIds: [] } : { filterVideoFavorite, activeFavoriteCollectionId: null, selectedTaskIds: [], selectedFavoriteCollectionIds: [] }),
 
       // Selection
       selectedTaskIds: [],
@@ -1930,6 +1969,15 @@ function scheduleCustomRecovery(taskId: string, delayMs = CUSTOM_RECOVERY_POLL_M
 
 // ===== Video task recovery =====
 
+/** 映射 store task ID -> 视频平台任务 ID，供 videoTaskExecutor 恢复时使用 */
+const videoTaskIdMap = new Map<string, string>()
+
+/** 供 videoTaskExecutor 的 recovery 回调读取 */
+;(globalThis as typeof globalThis & { __getVideoRecoveryState?: (taskId: string) => { volcengineTaskId?: string } }).__getVideoRecoveryState = (taskId: string) => {
+  const volcengineTaskId = videoTaskIdMap.get(taskId)
+  return volcengineTaskId ? { volcengineTaskId } : {}
+}
+
 function clearVideoRecoveryTimer(taskId: string) {
   const timer = videoRecoveryTimers.get(taskId)
   if (timer) clearTimeout(timer)
@@ -1945,22 +1993,17 @@ function scheduleVideoRecoveryFn(taskId: string, delayMs = VIDEO_POLL_INTERVAL_M
   videoRecoveryTimers.set(taskId, timer)
 }
 
-function getVideoRecoveryProfile(task: TaskRecord): ApiProfile | null {
-  const { settings } = useStore.getState()
-  const profiles = settings.profiles ?? []
-  const profile = profiles.find((p) => p.id === task.apiProfileId) ?? null
-  if (profile && profile.provider === 'volcengine') return profile
-  // Try to find any volcengine profile
-  for (const p of profiles) {
-    if (p.provider === 'volcengine') return p
-  }
-  return null
+function getVideoRecoveryProfile(task: TaskRecord): VideoProfile | null {
+  const state = useStore.getState()
+  const profileId = task.videoProfileId ?? state.activeVideoProfileId
+  const profile = (state.videoProfiles ?? []).find((p) => p.id === profileId) ?? null
+  return profile
 }
 
 async function recoverVideoTask(taskId: string) {
   const { tasks } = useStore.getState()
   const task = tasks.find((item) => item.id === taskId)
-  if (!task || task.apiProvider !== 'volcengine' || !task.volcengineTaskId || task.status === 'done') return
+  if (!task || task.taskType !== 'video' || !task.volcengineTaskId || task.status === 'done') return
 
   const profile = getVideoRecoveryProfile(task)
   if (!profile) {
@@ -1969,8 +2012,8 @@ async function recoverVideoTask(taskId: string) {
   }
 
   try {
-    const { getVolcengineQueuedVideoResult } = await import('./lib/volcengineVideoApi')
-    const result = await getVolcengineQueuedVideoResult(task.volcengineTaskId, profile)
+    const { getQueuedVideoResult } = await import('./lib/openaiCompatibleVideoApi')
+    const result = await getQueuedVideoResult(task.volcengineTaskId, profile)
 
     const coverImageId = result.coverImageUrl
       ? await storeCoverImageToDb(result.coverImageUrl)
@@ -1992,7 +2035,7 @@ async function recoverVideoTask(taskId: string) {
 
     clearVideoRecoveryTimer(taskId)
     useStore.getState().showToast('视频任务已恢复', 'success')
-    if (!isAgentTask(task)) showTaskCompletionNotification('视频生成完成', '火山引擎视频任务已恢复。')
+    if (!isAgentTask(task)) showTaskCompletionNotification('视频生成完成', '视频任务已恢复。')
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)
     // If task is still running/queued, continue recovery
@@ -2033,22 +2076,34 @@ async function storeCoverImageToDb(url: string): Promise<string> {
 }
 
 /** Execute a video task via the video task executor */
-async function executeVideoTaskFn(taskId: string, profile: ApiProfile) {
+async function executeVideoTaskFn(taskId: string, profile: VideoProfile) {
   const task = useStore.getState().tasks.find((t) => t.id === taskId)
   if (!task || !task.videoParams) return
+
+  // 加载参考图数据
+  let inputImages: InputImageData[] | undefined
+  if (task.inputImageIds && task.inputImageIds.length > 0) {
+    inputImages = []
+    for (const imgId of task.inputImageIds) {
+      const img = await getImage(imgId)
+      if (img?.dataUrl) {
+        inputImages.push({ id: imgId, dataUrl: img.dataUrl })
+      }
+    }
+  }
 
   await submitVideoTask({
     prompt: task.prompt,
     params: task.videoParams,
     profile,
     taskId,
-    model: task.apiModel,
+    model: profile.model,
     inputImageIds: task.inputImageIds.length > 0 ? task.inputImageIds : undefined,
+    inputImages,
     onStatusUpdate: (id, patch) => {
       updateTaskInStore(id, patch)
       if (patch.volcengineTaskId) {
-        const t = useStore.getState().tasks.find((item) => item.id === id)
-        if (t) putTask(t)
+        videoTaskIdMap.set(id, patch.volcengineTaskId)
       }
     },
     onTaskComplete: async (id, videoUrl, coverImageId) => {
@@ -2069,7 +2124,7 @@ async function executeVideoTaskFn(taskId: string, profile: ApiProfile) {
         }
       }
       useStore.getState().showToast('视频生成完成', 'success')
-      if (t && !isAgentTask(t)) showTaskCompletionNotification('视频生成完成', '火山引擎视频任务已完成。')
+      if (t && !isAgentTask(t)) showTaskCompletionNotification('视频生成完成', '视频任务已完成。')
     },
     onTaskError: (id, error) => {
       const t = useStore.getState().tasks.find((item) => item.id === id)
@@ -2273,7 +2328,7 @@ export async function initStore() {
       scheduleCustomRecovery(task.id, 0)
     }
     if (
-      task.apiProvider === 'volcengine' &&
+      task.taskType === 'video' &&
       task.volcengineTaskId &&
       (task.status === 'running' || task.volcengineRecoverable)
     ) {
@@ -2416,7 +2471,7 @@ export async function initStore() {
 
 /** 提交新任务 */
 export async function submitTask(options: { allowFullMask?: boolean; useCurrentApiProfileWhenReusedMissing?: boolean } = {}) {
-  const { settings, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
+  const { settings, appMode, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
   const normalizedSettings = normalizeSettings(settings)
@@ -2520,8 +2575,22 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     elapsed: null,
   }
 
-  // Route to video task executor for volcengine provider
-  if (activeProfile.provider === 'volcengine') {
+  // Route to video task executor for video mode
+  if (appMode === 'video') {
+    const state = useStore.getState()
+    const videoProfile = getActiveVideoProfile({
+      videoProfiles: state.videoProfiles,
+      activeVideoProfileId: state.activeVideoProfileId,
+    } as any)
+    if (!videoProfile || !videoProfile.apiKey) {
+      showToast('请先完善视频 API 配置', 'error')
+      useStore.getState().setShowSettings(true, 'video')
+      return
+    }
+    task.taskType = 'video'
+    task.videoProfileId = videoProfile.id
+    task.videoProfileName = videoProfile.name
+    task.videoModel = videoProfile.model
     task.videoParams = useStore.getState().videoParams
     task.volcengineRecoverable = false
     useStore.getState().setTasks([task, ...useStore.getState().tasks])
@@ -2534,7 +2603,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
     useStore.getState().setReusedTaskApiProfile(null)
 
-    void executeVideoTaskFn(taskId, activeProfile)
+    void executeVideoTaskFn(taskId, videoProfile)
     return
   }
 
@@ -4419,7 +4488,7 @@ export function getFavoriteCollectionTitle(collectionId: string | null, collecti
   return collections.find((collection) => collection.id === collectionId)?.name ?? DEFAULT_FAVORITE_COLLECTION_NAME
 }
 
-export function createFavoriteCollection(name: string) {
+export function createFavoriteCollection(name: string, type: 'image' | 'video' = 'image') {
   const normalizedName = normalizeFavoriteCollectionName(name)
   if (!normalizedName) return null
   if (Array.from(normalizedName).length > 60) {
@@ -4427,10 +4496,10 @@ export function createFavoriteCollection(name: string) {
     return null
   }
   const state = useStore.getState()
-  const existing = state.favoriteCollections.find((collection) => collection.name === normalizedName)
+  const existing = state.favoriteCollections.find((collection) => collection.name === normalizedName && (!type || collection.type === type || !collection.type))
   if (existing) return existing
   const now = Date.now()
-  const collection: FavoriteCollection = { id: genId(), name: normalizedName, createdAt: now, updatedAt: now }
+  const collection: FavoriteCollection = { id: genId(), name: normalizedName, createdAt: now, updatedAt: now, type }
   state.setFavoriteCollections([...state.favoriteCollections, collection])
   state.showToast(`已创建收藏夹「${normalizedName}」`, 'success')
   return collection

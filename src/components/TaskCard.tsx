@@ -574,9 +574,9 @@ export default function TaskCard({
               onTouchEnd={(e) => e.stopPropagation()}
               onTouchCancel={(e) => e.stopPropagation()}
             >
-              {/* API Name */}
-              {(task.apiProfileName || task.apiProvider) && (
-                <span 
+              {/* API Name - hide for video tasks */}
+              {task.taskType !== 'video' && (task.apiProfileName || task.apiProvider) && (
+                <span
                   className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 text-xs flex-shrink-0"
                   title={task.apiProfileName || task.apiProvider}
                 >
@@ -586,9 +586,9 @@ export default function TaskCard({
                   </span>
                 </span>
               )}
-              {/* Model */}
-              {showModel && (
-                <span 
+              {/* Model - hide for video tasks */}
+              {task.taskType !== 'video' && showModel && (
+                <span
                   className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-gray-600 dark:text-gray-300 text-xs flex-shrink-0"
                   title={task.apiModel}
                 >
@@ -610,29 +610,75 @@ export default function TaskCard({
                 </span>
               )}
               {/* Params: only show if not default or mismatch */}
-              {showQuality && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                  <span className="text-gray-400 dark:text-gray-500">质量</span>
-                  {qualityDisplay.isMismatch ? <ActualValueBadge value={qualityDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{qualityDisplay.displayValue}</span>}
-                </span>
-              )}
-              {showSize && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                  <span className="text-gray-400 dark:text-gray-500">尺寸</span>
-                  {sizeDisplay.isMismatch ? <ActualValueBadge value={sizeDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{sizeDisplay.displayValue}</span>}
-                </span>
-              )}
-              {showFormat && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                  <span className="text-gray-400 dark:text-gray-500">格式</span>
-                  {formatDisplay.isMismatch ? <ActualValueBadge value={formatDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{formatDisplay.displayValue}</span>}
-                </span>
-              )}
-              {showN && (
-                <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                  <span className="text-gray-400 dark:text-gray-500">数量</span>
-                  {nDisplay.isMismatch ? <ActualValueBadge value={nDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{nDisplay.displayValue}</span>}
-                </span>
+              {task.taskType === 'video' ? (
+                <>
+                  {task.videoParams?.resolution && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">分辨率</span>
+                      <span className="text-gray-600 dark:text-gray-300">{task.videoParams.resolution}</span>
+                    </span>
+                  )}
+                  {task.videoParams?.duration != null && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">时长</span>
+                      <span className="text-gray-600 dark:text-gray-300">{task.videoParams.duration}s</span>
+                    </span>
+                  )}
+                  {task.videoParams?.ratio && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">比例</span>
+                      <span className="text-gray-600 dark:text-gray-300">{task.videoParams.ratio}</span>
+                    </span>
+                  )}
+                  {task.videoParams?.seed != null && task.videoParams.seed > 0 && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">种子</span>
+                      <span className="text-gray-600 dark:text-gray-300">{task.videoParams.seed}</span>
+                    </span>
+                  )}
+                  {task.videoParams?.watermark && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-600 dark:text-gray-300">水印</span>
+                    </span>
+                  )}
+                  {task.videoParams?.generateAudio && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-600 dark:text-gray-300">音画</span>
+                    </span>
+                  )}
+                  {task.videoParams?.cameraFixed && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-600 dark:text-gray-300">定镜</span>
+                    </span>
+                  )}
+                </>
+              ) : (
+                <>
+                  {showQuality && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">质量</span>
+                      {qualityDisplay.isMismatch ? <ActualValueBadge value={qualityDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{qualityDisplay.displayValue}</span>}
+                    </span>
+                  )}
+                  {showSize && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">尺寸</span>
+                      {sizeDisplay.isMismatch ? <ActualValueBadge value={sizeDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{sizeDisplay.displayValue}</span>}
+                    </span>
+                  )}
+                  {showFormat && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">格式</span>
+                      {formatDisplay.isMismatch ? <ActualValueBadge value={formatDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{formatDisplay.displayValue}</span>}
+                    </span>
+                  )}
+                  {showN && (
+                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
+                      <span className="text-gray-400 dark:text-gray-500">数量</span>
+                      {nDisplay.isMismatch ? <ActualValueBadge value={nDisplay.displayValue} className="px-1 rounded-sm" /> : <span className="text-gray-600 dark:text-gray-300">{nDisplay.displayValue}</span>}
+                    </span>
+                  )}
+                </>
               )}
             </div>
             {/* 操作按钮 */}

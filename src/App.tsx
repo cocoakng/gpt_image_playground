@@ -9,6 +9,7 @@ import Header from './components/Header'
 import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
 import AgentWorkspace from './components/AgentWorkspace'
+import VideoWorkspace from './components/VideoWorkspace'
 import InputBar from './components/InputBar'
 import DetailModal from './components/DetailModal'
 import Lightbox from './components/Lightbox'
@@ -26,8 +27,8 @@ let customProviderConfigUrlImportStarted = false
 export default function App() {
   const setSettings = useStore((s) => s.setSettings)
   const appMode = useStore((s) => s.appMode)
-  const filterFavorite = useStore((s) => s.filterFavorite)
-  const activeFavoriteCollectionId = useStore((s) => s.activeFavoriteCollectionId)
+  const filterFavorite = useStore((s) => s.appMode === 'video' ? s.filterVideoFavorite : s.filterFavorite)
+  const activeFavoriteCollectionId = useStore((s) => s.appMode === 'video' ? s.activeVideoFavoriteCollectionId : s.activeFavoriteCollectionId)
   useDockerApiUrlMigrationNotice()
   useGlobalClickSuppression()
 
@@ -78,6 +79,8 @@ export default function App() {
       <Header />
       {appMode === 'agent' ? (
         <AgentWorkspace />
+      ) : appMode === 'video' ? (
+        <VideoWorkspace />
       ) : (
         <main data-home-main data-drag-select-surface className="pb-48">
           <div className="safe-area-x max-w-7xl mx-auto">
@@ -86,7 +89,7 @@ export default function App() {
           </div>
         </main>
       )}
-      <InputBar />
+      {appMode !== 'video' && <InputBar />}
       <DetailModal />
       <Lightbox />
       <SettingsModal />

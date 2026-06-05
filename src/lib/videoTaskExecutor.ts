@@ -1,29 +1,34 @@
 /**
  * 视频任务执行器 - 独立于图片生成逻辑
- * 负责火山引擎视频生成任务的提交、轮询、恢复
+ * 负责视频生成任务的提交、轮询、恢复
  */
 
-import type { ApiProfile, TaskRecord, VideoParams } from '../types'
+import type { TaskRecord, VideoParams, VideoProfile } from '../types'
 import {
-  submitVolcengineVideoTask,
-  pollVolcengineVideoTask,
-  getVolcengineQueuedVideoResult,
+  submitVideoTask as submitVideoApiTask,
+  pollVideoTask as pollVideoApiTask,
+  getQueuedVideoResult as getQueuedVideoApiResult,
   VIDEO_POLL_INTERVAL_MS,
-} from './volcengineVideoApi'
+  type InputImageData as InputImageData,
+} from './openaiCompatibleVideoApi'
 import { storeImage, getImage } from './db'
 
 // ===== 状态管理 =====
 
 const videoCache = new Map<string, { videoUrl: string; coverUrl: string }>()
 const videoPollingTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** 保存最后一次 submitVideoTask 调用的 options，供恢复时使用 */
+const lastSubmitOptions = new Map<string, VideoTaskOptions>()
 
 export interface VideoTaskOptions {
   prompt: string
   params: VideoParams
-  profile: ApiProfile
+  profile: VideoProfile
   taskId: string
   model?: string
   inputImageIds?: string[]
+  /** 已加载的参考图数据 */
+  inputImages?: InputImageData[]
   onStatusUpdate: (taskId: string, patch: Partial<TaskRecord>) => void
   onTaskComplete: (taskId: string, videoUrl: string, coverImageId: string | null) => void
   onTaskError: (taskId: string, error: string) => void
@@ -34,13 +39,17 @@ export interface VideoTaskOptions {
 export async function submitVideoTask(options: VideoTaskOptions): Promise<void> {
   const controller = new AbortController()
 
+  // 保存 options 供恢复使用
+  lastSubmitOptions.set(options.taskId, options)
+
   try {
     // 1. 提交任务
-    const { taskId } = await submitVolcengineVideoTask({
+    const { taskId } = await submitVideoApiTask({
       prompt: options.prompt,
       params: options.params,
       profile: options.profile,
       model: options.model,
+      inputImages: options.inputImages,
       signal: controller.signal,
     })
 
@@ -65,9 +74,8 @@ export async function submitVideoTask(options: VideoTaskOptions): Promise<void> 
       finishedAt: Date.now(),
     })
 
-    // 如果已有 taskId，安排恢复轮询
-    const task = options.taskId
-    scheduleVideoRecovery(task, options)
+    // 安排恢复轮询
+    scheduleVideoRecovery(options.taskId, options)
   }
 }
 
@@ -79,7 +87,7 @@ async function pollVideoTaskWithRecovery(
   controller: AbortController,
 ): Promise<void> {
   try {
-    const result = await pollVolcengineVideoTask(
+    const result = await pollVideoApiTask(
       taskId,
       options.profile,
       controller.signal,
@@ -108,13 +116,15 @@ async function pollVideoTaskWithRecovery(
       options.onStatusUpdate(options.taskId, {
         volcengineRecoverable: true,
         status: 'error' as const,
-        error: '与火山引擎的连接已断开，之后会继续查询任务结果。',
+        error: '与视频服务的连接已断开，之后会继续查询任务结果。',
         finishedAt: Date.now(),
       })
       scheduleVideoRecovery(options.taskId, options)
     } else {
       options.onTaskError(options.taskId, errorMessage)
     }
+  } finally {
+    lastSubmitOptions.delete(options.taskId)
   }
 }
 
@@ -158,14 +168,26 @@ function scheduleVideoRecovery(taskId: string, options: VideoTaskOptions, delayM
 
 async function recoverVideoTask(taskId: string, options: VideoTaskOptions): Promise<void> {
   try {
-    // 获取已有的 volcengineTaskId
-    const state = getCurrentTaskState(options)
-    if (!state.volcengineTaskId) {
+    // 优先从已保存的 options 中获取 volcengineTaskId
+    let volcengineTaskId: string | undefined
+
+    // 1. 从缓存的 submit options 获取
+    const cached = lastSubmitOptions.get(taskId)
+    if (cached) {
+      // 需要获取当前任务的 taskId（缓存的 submit 已返回过）
+      // 但如果缓存已被清除，从 store 获取
+    }
+
+    // 2. 从 store 中的任务记录获取
+    const task = getCurrentTaskState(options)
+    volcengineTaskId = task.volcengineTaskId
+
+    if (!volcengineTaskId) {
       options.onTaskError(taskId, '无法恢复：未找到视频任务 ID')
       return
     }
 
-    const result = await getVolcengineQueuedVideoResult(state.volcengineTaskId, options.profile)
+    const result = await getQueuedVideoApiResult(volcengineTaskId, options.profile)
 
     const coverImageId = result.coverImageUrl
       ? await storeCoverImage(result.coverImageUrl)
@@ -198,8 +220,15 @@ function isRecoverableError(err: unknown): boolean {
   return msg.includes('fetch') || msg.includes('network') || msg.includes('ECONNREFUSED')
 }
 
+/** 从 store 回调中获取当前任务状态 */
 function getCurrentTaskState(options: VideoTaskOptions): { volcengineTaskId?: string } {
-  // 从 onStatusUpdate 回调中获取当前任务状态（简化实现）
+  // 通过触发一次空更新来尝试获取最新状态（store 会返回 patch）
+  // 实际实现中，我们从 options 关联的任务数据中读取
+  // 这里直接读取 store 中对应 task 的最新数据
+  const store = globalThis as typeof globalThis & { __getVideoRecoveryState?: (taskId: string) => { volcengineTaskId?: string } }
+  if (store.__getVideoRecoveryState) {
+    return store.__getVideoRecoveryState(options.taskId)
+  }
   return {}
 }
 
@@ -221,6 +250,7 @@ export function cancelVideoTask(taskId: string): void {
     clearTimeout(timer)
     videoPollingTimers.delete(taskId)
   }
+  lastSubmitOptions.delete(taskId)
 }
 
 /**
@@ -229,3 +259,6 @@ export function cancelVideoTask(taskId: string): void {
 export function getPollingVideoTaskIds(): string[] {
   return Array.from(videoPollingTimers.keys())
 }
+
+export { VIDEO_POLL_INTERVAL_MS }
+export type { InputImageData } from './openaiCompatibleVideoApi'

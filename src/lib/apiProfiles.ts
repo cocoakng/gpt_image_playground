@@ -12,6 +12,7 @@ import type {
   CustomProviderSubmitMapping,
   CustomProviderTemplate,
   ReferenceImageEditAction,
+  VideoProfile,
 } from '../types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES, DEFAULT_ZIP_DOWNLOAD_ROUTES, ZIP_DOWNLOAD_ROUTE_VALUES, type VideoParams } from '../types'
 import { shouldUseApiProxy } from './devProxy'
@@ -37,8 +38,45 @@ export const DEFAULT_API_TIMEOUT = 600
 
 export const DEFAULT_VIDEO_PARAMS: VideoParams = {
   resolution: '720p',
-  duration: '5s',
+  duration: 5,
   ratio: '16:9',
+}
+
+export const DEFAULT_VIDEO_PROFILE_ID = 'default-video'
+export const DEFAULT_VIDEO_MODEL = ''
+
+export function normalizeVideoProfile(input: unknown, fallback?: Partial<VideoProfile>): VideoProfile {
+  const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
+  return {
+    id: typeof record.id === 'string' && record.id.trim() ? record.id : fallback?.id ?? DEFAULT_VIDEO_PROFILE_ID,
+    name: typeof record.name === 'string' && record.name.trim() ? record.name : fallback?.name ?? '视频配置',
+    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl.trim() : fallback?.baseUrl ?? '',
+    apiKey: typeof record.apiKey === 'string' ? record.apiKey : fallback?.apiKey ?? '',
+    model: typeof record.model === 'string' && record.model.trim() ? record.model : fallback?.model ?? DEFAULT_VIDEO_MODEL,
+    timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : fallback?.timeout ?? DEFAULT_API_TIMEOUT,
+  }
+}
+
+export function createDefaultVideoProfile(overrides: Partial<VideoProfile> = {}): VideoProfile {
+  return {
+    id: DEFAULT_VIDEO_PROFILE_ID,
+    name: '视频配置',
+    baseUrl: '',
+    apiKey: '',
+    model: DEFAULT_VIDEO_MODEL,
+    timeout: DEFAULT_API_TIMEOUT,
+    ...overrides,
+  }
+}
+
+export function getActiveVideoProfile(settings: AppSettings): VideoProfile | null {
+  return settings.videoProfiles?.find((p) => p.id === settings.activeVideoProfileId) ?? null
+}
+
+export function validateVideoProfile(profile: VideoProfile): string | null {
+  if (!profile.apiKey) return '请填写 API Key'
+  if (!profile.baseUrl) return '请填写 API 地址'
+  return null
 }
 
 const BUILT_IN_PROVIDER_IDS = new Set<ApiProvider>(['openai', 'fal', 'volcengine'])
@@ -509,6 +547,13 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     : profiles[0].id
   const active = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
+  const activeVideoProfiles = Array.isArray(record.videoProfiles) && record.videoProfiles.length
+    ? record.videoProfiles.map((profile) => normalizeVideoProfile(profile))
+    : [] as VideoProfile[]
+  const activeVideoProfileId = typeof record.activeVideoProfileId === 'string' && activeVideoProfiles.some((p) => p.id === record.activeVideoProfileId)
+    ? record.activeVideoProfileId
+    : activeVideoProfiles[0]?.id ?? ''
+
   return {
     baseUrl: active.baseUrl,
     apiKey: active.apiKey,
@@ -534,6 +579,8 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     agentWebSearch: typeof record.agentWebSearch === 'boolean' ? record.agentWebSearch : false,
     profiles,
     activeProfileId,
+    videoProfiles: activeVideoProfiles,
+    activeVideoProfileId,
   }
 }
 
@@ -814,6 +861,8 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
     createDefaultOpenAIProfile(),
     createDefaultVolcengineProfile(),
   ],
+  videoProfiles: [],
+  activeVideoProfileId: '',
   clearInputAfterSubmit: false,
   persistInputOnRestart: true,
   reuseTaskApiProfileTemporarily: false,

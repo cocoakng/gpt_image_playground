@@ -90,8 +90,13 @@ function getInitialCheckedCollectionIds(tasks: TaskRecord[], defaultFavoriteColl
   return idSets.every((ids) => sameIdSet(ids, first)) ? first : []
 }
 
-function getCollectionTasks(collectionId: string, tasks: TaskRecord[]) {
-  const favoriteTasks = tasks.filter((task) => task.isFavorite)
+function getCollectionTasks(collectionId: string, tasks: TaskRecord[], filterTaskType?: 'image' | 'video') {
+  const favoriteTasks = tasks.filter((task) => {
+    if (!task.isFavorite) return false
+    if (filterTaskType === 'video' && task.taskType !== 'video') return false
+    if (filterTaskType === 'image' && task.taskType === 'video') return false
+    return true
+  })
   if (collectionId === ALL_FAVORITES_COLLECTION_ID) return favoriteTasks
   return favoriteTasks.filter((task) => getTaskFavoriteCollectionIds(task).includes(collectionId))
 }
@@ -407,11 +412,21 @@ function FavoriteCollectionOverviewCard({
 
 export function FavoriteCollectionsView() {
   const tasks = useStore((s) => s.tasks)
-  const collections = useStore((s) => s.favoriteCollections)
+  const appMode = useStore((s) => s.appMode)
+  const allCollections = useStore((s) => s.favoriteCollections)
+  const collectionType: 'image' | 'video' = appMode === 'video' ? 'video' : 'image'
+  const collections = allCollections.filter((c) => !c.type || c.type === collectionType)
   const defaultFavoriteCollectionId = useStore((s) => s.defaultFavoriteCollectionId)
   const setDefaultFavoriteCollectionId = useStore((s) => s.setDefaultFavoriteCollectionId)
-  const searchQuery = useStore((s) => s.searchQuery)
-  const setActiveFavoriteCollectionId = useStore((s) => s.setActiveFavoriteCollectionId)
+  const searchQuery = useStore((s) => s.appMode === 'video' ? s.searchVideoQuery : s.searchQuery)
+  const activeFavoriteCollectionId = useStore((s) => s.appMode === 'video' ? s.activeVideoFavoriteCollectionId : s.activeFavoriteCollectionId)
+  const setActiveFavoriteCollectionId = (id: string | null) => {
+    if (appMode === 'video') {
+      useStore.setState({ activeVideoFavoriteCollectionId: id, selectedTaskIds: [], selectedFavoriteCollectionIds: [] })
+    } else {
+      useStore.getState().setActiveFavoriteCollectionId(id)
+    }
+  }
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const selectedFavoriteCollectionIds = useStore((s) => s.selectedFavoriteCollectionIds)
   const setSelectedFavoriteCollectionIds = useStore((s) => s.setSelectedFavoriteCollectionIds)
@@ -421,17 +436,18 @@ export function FavoriteCollectionsView() {
   const suppressClickUntilRef = useRef(0)
   
   const cards = useMemo<CollectionCard[]>(() => {
-    const allTasks = getCollectionTasks(ALL_FAVORITES_COLLECTION_ID, tasks)
+    const filterTaskType: 'video' | 'image' = appMode === 'video' ? 'video' : 'image'
+    const allTasks = getCollectionTasks(ALL_FAVORITES_COLLECTION_ID, tasks, filterTaskType)
     return [
-      { id: ALL_FAVORITES_COLLECTION_ID, name: '全部', tasks: allTasks },
+      { id: ALL_FAVORITES_COLLECTION_ID, name: appMode === 'video' ? '全部视频' : '全部', tasks: allTasks },
       ...collections.map((collection) => ({
         id: collection.id,
         name: collection.name,
         collection,
-        tasks: getCollectionTasks(collection.id, tasks),
+        tasks: getCollectionTasks(collection.id, tasks, filterTaskType),
       })),
     ]
-  }, [collections, tasks])
+  }, [collections, tasks, appMode])
 
   const filteredCards = useMemo(() => {
     if (!searchQuery.trim()) return cards
@@ -480,13 +496,15 @@ export function FavoriteCollectionsView() {
 
   const handleDelete = (collection: FavoriteCollection, collectionTasks: TaskRecord[]) => {
     if (collections.length <= 1) return
-    const imageCount = new Set(collectionTasks.flatMap((task) => task.outputImages || [])).size
+    const isVideoMode = appMode === 'video'
+    const taskTypeLabel = isVideoMode ? '视频' : '图片'
+    const taskCount = collectionTasks.length
     setConfirmDialog({
       title: '删除收藏夹',
       message: `确定要删除收藏夹「${collection.name}」吗？`,
-      checkbox: imageCount > 0
+      checkbox: taskCount > 0
         ? {
-            label: `同时删除收藏夹中的图片（${imageCount} 张）`,
+            label: `同时删除收藏夹中的${taskTypeLabel}（${taskCount} 个任务）`,
             tone: 'danger',
           }
         : undefined,
@@ -575,7 +593,10 @@ export function FavoriteCollectionsView() {
 export function FavoriteCollectionPickerModal() {
   const taskIds = useStore((s) => s.favoritePickerTaskIds)
   const tasks = useStore((s) => s.tasks)
-  const collections = useStore((s) => s.favoriteCollections)
+  const appMode = useStore((s) => s.appMode)
+  const allCollections = useStore((s) => s.favoriteCollections)
+  const collectionType: 'image' | 'video' = appMode === 'video' ? 'video' : 'image'
+  const collections = allCollections.filter((c) => !c.type || c.type === collectionType)
   const defaultFavoriteCollectionId = useStore((s) => s.defaultFavoriteCollectionId)
   const setDefaultFavoriteCollectionId = useStore((s) => s.setDefaultFavoriteCollectionId)
   const setFavoriteCollections = useStore((s) => s.setFavoriteCollections)
@@ -645,7 +666,7 @@ export function FavoriteCollectionPickerModal() {
   }
 
   const handleCreate = () => {
-    const collection = createFavoriteCollection(draft)
+    const collection = createFavoriteCollection(draft, collectionType)
     if (!collection) return
     setCheckedIds((current) => Array.from(new Set([...current, collection.id])))
     setDraft('')
@@ -831,13 +852,15 @@ export function FavoriteCollectionPickerModal() {
     e.stopPropagation()
     if (collections.length <= 1) return
     const collectionTasks = tasks.filter(t => getTaskFavoriteCollectionIds(t).includes(collection.id))
-    const imageCount = new Set(collectionTasks.flatMap((task) => task.outputImages || [])).size
+    const isVideoMode = appMode === 'video'
+    const taskTypeLabel = isVideoMode ? '视频' : '图片'
+    const taskCount = collectionTasks.length
     setConfirmDialog({
       title: '删除收藏夹',
       message: `确定要删除收藏夹「${collection.name}」吗？`,
-      checkbox: imageCount > 0
+      checkbox: taskCount > 0
         ? {
-            label: `同时删除收藏夹中的图片（${imageCount} 张）`,
+            label: `同时删除收藏夹中的${taskTypeLabel}（${taskCount} 个任务）`,
             tone: 'danger',
           }
         : undefined,
@@ -1015,14 +1038,20 @@ export function FavoriteCollectionPickerModal() {
 
 export function useFavoriteCollectionTitle() {
   const activeFavoriteCollectionId = useStore((s) => s.activeFavoriteCollectionId)
+  const activeVideoFavoriteCollectionId = useStore((s) => s.activeVideoFavoriteCollectionId)
+  const appMode = useStore((s) => s.appMode)
   const collections = useStore((s) => s.favoriteCollections)
-  return activeFavoriteCollectionId ? getFavoriteCollectionTitle(activeFavoriteCollectionId, collections) : ''
+  const id = appMode === 'video' ? activeVideoFavoriteCollectionId : activeFavoriteCollectionId
+  return id ? getFavoriteCollectionTitle(id, collections) : ''
 }
 
 export function ManageCollectionsModal() {
   const open = useStore((s) => s.isManageCollectionsModalOpen)
   const closeManage = useStore((s) => s.closeManageCollectionsModal)
-  const collections = useStore((s) => s.favoriteCollections)
+  const appMode = useStore((s) => s.appMode)
+  const allCollections = useStore((s) => s.favoriteCollections)
+  const collectionType: 'image' | 'video' = appMode === 'video' ? 'video' : 'image'
+  const collections = allCollections.filter((c) => !c.type || c.type === collectionType)
   const defaultFavoriteCollectionId = useStore((s) => s.defaultFavoriteCollectionId)
   const setDefaultFavoriteCollectionId = useStore((s) => s.setDefaultFavoriteCollectionId)
   const setFavoriteCollections = useStore((s) => s.setFavoriteCollections)
@@ -1086,7 +1115,7 @@ export function ManageCollectionsModal() {
 
   const handleCreate = () => {
     if (!draft.trim()) return
-    createFavoriteCollection(draft)
+    createFavoriteCollection(draft, collectionType)
     setDraft('')
   }
 
@@ -1265,13 +1294,15 @@ export function ManageCollectionsModal() {
     e.stopPropagation()
     if (collections.length <= 1) return
     const collectionTasks = tasks.filter(t => getTaskFavoriteCollectionIds(t).includes(collection.id))
-    const imageCount = new Set(collectionTasks.flatMap((task) => task.outputImages || [])).size
+    const isVideoMode = appMode === 'video'
+    const taskTypeLabel = isVideoMode ? '视频' : '图片'
+    const taskCount = collectionTasks.length
     setConfirmDialog({
       title: '删除收藏夹',
       message: `确定要删除收藏夹「${collection.name}」吗？`,
-      checkbox: imageCount > 0
+      checkbox: taskCount > 0
         ? {
-            label: `同时删除收藏夹中的图片（${imageCount} 张）`,
+            label: `同时删除收藏夹中的${taskTypeLabel}（${taskCount} 个任务）`,
             tone: 'danger',
           }
         : undefined,

@@ -876,7 +876,7 @@ export default function DetailModal() {
             <h3 className="text-xs font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-2">
               参数配置
             </h3>
-            {showSourceInfo && (
+            {showSourceInfo && task.taskType !== 'video' && (
               <div className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-white/[0.03]">
                 <span className="text-gray-400 dark:text-gray-500">来源</span>
                 <br />
@@ -884,42 +884,104 @@ export default function DetailModal() {
                 <span className="text-gray-400 dark:text-gray-500"> · {taskProfileName} · {taskModel}</span>
               </div>
             )}
-            <div className="grid grid-cols-2 gap-2 text-xs mb-4">
-              <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                <span className="text-gray-400 dark:text-gray-500">尺寸</span>
+            {task.taskType === 'video' && task.videoProfileName && (
+              <div className="mb-2 rounded-lg bg-gray-50 px-3 py-2 text-xs dark:bg-white/[0.03]">
+                <span className="text-gray-400 dark:text-gray-500">来源</span>
                 <br />
-                <DetailParamValue task={task} paramKey="size" className="font-medium" actualParams={currentActualParams} />
+                <span className="font-medium text-gray-700 dark:text-gray-200">视频服务</span>
+                <span className="text-gray-400 dark:text-gray-500"> · {task.videoProfileName}{task.videoModel ? ` · ${task.videoModel}` : ''}</span>
               </div>
-              <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                <span className="text-gray-400 dark:text-gray-500">质量</span>
-                <br />
-                <DetailParamValue task={task} paramKey="quality" className="font-medium" actualParams={currentActualParams} />
+            )}
+            {task.taskType === 'video' ? (
+              <div className="grid grid-cols-2 gap-2 text-xs mb-4">
+                {task.videoParams?.resolution && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">分辨率</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.resolution}</span>
+                  </div>
+                )}
+                {task.videoParams?.duration != null && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">时长</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.duration}s</span>
+                  </div>
+                )}
+                {task.videoParams?.ratio && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">比例</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.ratio}</span>
+                  </div>
+                )}
+                {task.videoParams?.seed != null && task.videoParams.seed > 0 && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">种子</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.seed}</span>
+                  </div>
+                )}
+                {task.videoParams?.watermark && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">水印</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
+                  </div>
+                )}
+                {task.videoParams?.generateAudio && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">音画同步</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
+                  </div>
+                )}
+                {task.videoParams?.cameraFixed && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">固定镜头</span>
+                    <br />
+                    <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
+                  </div>
+                )}
               </div>
-              <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                <span className="text-gray-400 dark:text-gray-500">格式</span>
-                <br />
-                <DetailParamValue task={task} paramKey="output_format" className="font-medium" actualParams={currentActualParams} />
-              </div>
-              <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                <span className="text-gray-400 dark:text-gray-500">审核</span>
-                <br />
-                <DetailParamValue task={task} paramKey="moderation" className="font-medium" actualParams={currentActualParams} />
-              </div>
-              {!isAgentTask && (
+            ) : (
+              <div className="grid grid-cols-2 gap-2 text-xs mb-4">
                 <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                  <span className="text-gray-400 dark:text-gray-500">数量</span>
+                  <span className="text-gray-400 dark:text-gray-500">尺寸</span>
                   <br />
-                  <DetailParamValue task={task} paramKey="n" className="font-medium" />
+                  <DetailParamValue task={task} paramKey="size" className="font-medium" actualParams={currentActualParams} />
                 </div>
-              )}
-              {task.params.output_compression != null && (
                 <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                  <span className="text-gray-400 dark:text-gray-500">压缩率</span>
+                  <span className="text-gray-400 dark:text-gray-500">质量</span>
                   <br />
-                  <DetailParamValue task={task} paramKey="output_compression" className="font-medium" actualParams={currentActualParams} />
+                  <DetailParamValue task={task} paramKey="quality" className="font-medium" actualParams={currentActualParams} />
                 </div>
-              )}
-            </div>
+                <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                  <span className="text-gray-400 dark:text-gray-500">格式</span>
+                  <br />
+                  <DetailParamValue task={task} paramKey="output_format" className="font-medium" actualParams={currentActualParams} />
+                </div>
+                <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                  <span className="text-gray-400 dark:text-gray-500">审核</span>
+                  <br />
+                  <DetailParamValue task={task} paramKey="moderation" className="font-medium" actualParams={currentActualParams} />
+                </div>
+                {!isAgentTask && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">数量</span>
+                    <br />
+                    <DetailParamValue task={task} paramKey="n" className="font-medium" />
+                  </div>
+                )}
+                {task.params.output_compression != null && (
+                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
+                    <span className="text-gray-400 dark:text-gray-500">压缩率</span>
+                    <br />
+                    <DetailParamValue task={task} paramKey="output_compression" className="font-medium" actualParams={currentActualParams} />
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* 时间 */}
             <div className="text-xs text-gray-400 dark:text-gray-500 mb-4">
