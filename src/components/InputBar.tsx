@@ -1042,14 +1042,16 @@ export default function InputBar() {
       setNInput('auto')
       return
     }
-    setNInput(value)
     const nextValue = Number(value)
     if (!Number.isNaN(nextValue) && nextValue > outputImageLimit) {
+      setNInput(String(outputImageLimit))
+      setParams({ n: outputImageLimit })
       showNLimitHint()
     } else {
+      setNInput(value)
       hideNLimitHint()
     }
-  }, [agentAutoImageCount, hideNLimitHint, outputImageLimit, showNLimitHint])
+  }, [agentAutoImageCount, hideNLimitHint, outputImageLimit, setParams, showNLimitHint])
 
   const handleNLimitIncreaseAttempt = useCallback((preventDefault: () => void) => {
     if (agentAutoImageCount) {
