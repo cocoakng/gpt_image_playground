@@ -6,8 +6,79 @@ export const MIME_MAP: Record<string, string> = {
   webp: 'image/webp',
 }
 
-export const MAX_MASK_EDIT_FILE_BYTES = 50 * 1024 * 1024
-export const MAX_IMAGE_INPUT_PAYLOAD_BYTES = 512 * 1024 * 1024
+/** 单张参考图最大 10MB，超过则压缩 */
+export const MAX_INPUT_IMAGE_BYTES = 10 * 1024 * 1024
+/** 编辑模式遮罩文件最大 20MB */
+export const MAX_MASK_EDIT_FILE_BYTES = 20 * 1024 * 1024
+
+/**
+ * 压缩图片（使用 canvas），返回压缩后的 Blob
+ * 如果原始大小不超过 limitBytes，直接返回原文件
+ * 保持原始格式压缩：JPEG 用 JPEG，WebP 用 WebP，PNG 优先尝试 WebP（支持有损压缩+透明通道）
+ */
+export async function compressImageFile(file: File, limitBytes: number = MAX_INPUT_IMAGE_BYTES): Promise<Blob> {
+  if (file.size <= limitBytes) return file
+
+  const isPng = file.type === 'image/png'
+
+  const canvas = await loadImageToCanvas(file)
+
+  // PNG 没有有损压缩，先尝试用 WebP 压缩（保留透明通道）
+  if (isPng) {
+    return tryPngCompression(canvas, limitBytes)
+  }
+
+  // JPEG 和 WebP 用各自格式逐步降低质量
+  const mimeType = file.type
+  return tryCompressWithQuality(canvas, mimeType, limitBytes)
+}
+
+async function loadImageToCanvas(file: File): Promise<HTMLCanvasElement> {
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const img = new Image()
+    const url = URL.createObjectURL(file)
+    img.onload = () => { URL.revokeObjectURL(url); resolve(img) }
+    img.onerror = () => { URL.revokeObjectURL(url); reject(new Error('图片加载失败')) }
+    img.src = url
+  })
+
+  const canvas = document.createElement('canvas')
+  canvas.width = img.naturalWidth
+  canvas.height = img.naturalHeight
+  const ctx = canvas.getContext('2d')
+  if (!ctx) throw new Error('无法获取 canvas 上下文')
+  ctx.drawImage(img, 0, 0)
+  return canvas
+}
+
+async function canvasToBlob(canvas: HTMLCanvasElement, type: string, quality: number): Promise<Blob | null> {
+  return new Promise((resolve) => {
+    canvas.toBlob((blob) => resolve(blob), type, quality)
+  })
+}
+
+async function tryCompressWithQuality(canvas: HTMLCanvasElement, mimeType: string, limitBytes: number): Promise<Blob> {
+  for (let q = 0.95; q >= 0.1; q -= 0.1) {
+    const blob = await canvasToBlob(canvas, mimeType, q)
+    if (blob && blob.size <= limitBytes) return blob
+    if (blob && q <= 0.1) return blob
+  }
+  throw new Error('图片过大，无法压缩到限制范围内')
+}
+
+async function tryPngCompression(canvas: HTMLCanvasElement, limitBytes: number): Promise<Blob> {
+  // 先尝试 WebP 压缩（保留透明通道）
+  for (let q = 0.95; q >= 0.1; q -= 0.1) {
+    const blob = await canvasToBlob(canvas, 'image/webp', q)
+    if (blob && blob.size <= limitBytes) return blob
+  }
+  // WebP 也压不下去，降级 JPEG（丢失透明通道）
+  for (let q = 0.9; q >= 0.1; q -= 0.1) {
+    const blob = await canvasToBlob(canvas, 'image/jpeg', q)
+    if (blob && blob.size <= limitBytes) return blob
+  }
+  throw new Error('图片过大，无法压缩到限制范围内')
+}
 
 export interface CallApiOptions {
   settings: AppSettings
@@ -73,8 +144,10 @@ function assertMaxBytes(label: string, bytes: number, maxBytes: number) {
   }
 }
 
+/** 验证所有参考图总大小不超过限制（3张 × 10MB = 30MB） */
 export function assertImageInputPayloadSize(bytes: number) {
-  assertMaxBytes('图像输入有效负载总大小', bytes, MAX_IMAGE_INPUT_PAYLOAD_BYTES)
+  const totalLimit = MAX_INPUT_IMAGE_BYTES * 3
+  assertMaxBytes('图像输入有效负载总大小', bytes, totalLimit)
 }
 
 export function assertMaskEditFileSize(label: string, bytes: number) {
