@@ -369,7 +369,7 @@ function BatchActionButton({
 }
 
 /** API 支持的最大参考图数量 */
-const API_MAX_IMAGES = 16
+const API_MAX_IMAGES = 3
 
 function getFavoriteCollectionTasksForBatch(collectionId: string, tasks: TaskRecord[]) {
   const favoriteTasks = tasks.filter((task) => task.isFavorite)
@@ -1042,14 +1042,16 @@ export default function InputBar() {
       setNInput('auto')
       return
     }
-    setNInput(value)
     const nextValue = Number(value)
     if (!Number.isNaN(nextValue) && nextValue > outputImageLimit) {
+      setNInput(String(outputImageLimit))
+      setParams({ n: outputImageLimit })
       showNLimitHint()
     } else {
+      setNInput(value)
       hideNLimitHint()
     }
-  }, [agentAutoImageCount, hideNLimitHint, outputImageLimit, showNLimitHint])
+  }, [agentAutoImageCount, hideNLimitHint, outputImageLimit, setParams, showNLimitHint])
 
   const handleNLimitIncreaseAttempt = useCallback((preventDefault: () => void) => {
     if (agentAutoImageCount) {
@@ -1903,9 +1905,22 @@ export default function InputBar() {
   const renderImageThumbs = () => {
     return (
       <div ref={imagesRef}>
-        <div className="grid grid-cols-[repeat(auto-fill,52px)] justify-between gap-x-2 gap-y-3 mb-3">
-          {inputImages.map((img, idx) => renderImageThumb(img, idx))}
-          {renderClearAllButton()}
+        <div className="flex items-center gap-3 mb-3">
+          <div className="flex items-center gap-2 shrink-0">
+            {inputImages.map((img, idx) => renderImageThumb(img, idx))}
+            {renderClearAllButton()}
+          </div>
+          {inputImages.length > 0 && (
+            <div className="flex items-center gap-1 text-[10px] leading-relaxed select-none">
+              <span className="text-gray-400 dark:text-gray-500">· 最多 {API_MAX_IMAGES} 张</span>
+              <span className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
+              <span className="relative inline-block animate-shimmer rounded bg-gradient-to-r from-blue-500 via-cyan-400 to-blue-500 bg-clip-text px-1 text-transparent dark:from-blue-400 dark:via-cyan-300 dark:to-blue-400">单张不超过 10MB（超出自动压缩）</span>
+              <span className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
+              <span className="text-gray-400 dark:text-gray-500">编辑添加遮罩不超过 20MB</span>
+              <span className="shrink-0 text-gray-300 dark:text-gray-600">·</span>
+              <span className="text-gray-400 dark:text-gray-500">可拖动调整顺序</span>
+            </div>
+          )}
         </div>
         {touchDragPreview?.src && createPortal(
           <div

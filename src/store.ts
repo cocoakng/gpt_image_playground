@@ -48,7 +48,7 @@ import { callImageApi } from './lib/api'
 import { callAgentConversationTitleApi, callAgentResponsesApi, callBatchImageSingle, parseBatchImageCallArguments, type AgentApiResultImage, type BatchImageCallResult } from './lib/agentApi'
 import { collectAgentRoundOutputImageSlots, extractAgentReferenceIds, getAgentCurrentReferenceId, getAgentGeneratedImageReferenceId, replaceAgentPromptImageReferencesForApi } from './lib/agentImageReferences'
 import { showBrowserNotification } from './lib/browserNotification'
-import { IMAGE_FETCH_CORS_HINT } from './lib/imageApiShared'
+import { IMAGE_FETCH_CORS_HINT, compressImageFile, MAX_INPUT_IMAGE_BYTES } from './lib/imageApiShared'
 import { getFalErrorMessage, getFalQueuedImageResult } from './lib/falAiImageApi'
 import { getCustomQueuedImageResult } from './lib/openaiCompatibleImageApi'
 import { submitVideoTask, cancelVideoTask, getPollingVideoTaskIds, VIDEO_POLL_INTERVAL_MS, type InputImageData } from './lib/videoTaskExecutor'
@@ -5153,7 +5153,8 @@ export async function addImageFromFile(file: File): Promise<void> {
 
 export async function createInputImageFromFile(file: File): Promise<InputImage | null> {
   if (!file.type.startsWith('image/')) return null
-  const dataUrl = await fileToDataUrl(file)
+  const compressedBlob = await compressImageFile(file, MAX_INPUT_IMAGE_BYTES)
+  const dataUrl = await blobToDataUrl(compressedBlob)
   const id = await storeImage(dataUrl, 'upload')
   cacheImage(id, dataUrl)
   return { id, dataUrl }
@@ -5164,19 +5165,14 @@ export async function addImageFromUrl(src: string): Promise<void> {
   const res = await fetch(src)
   const blob = await res.blob()
   if (!blob.type.startsWith('image/')) throw new Error('不是有效的图片')
-  const dataUrl = await blobToDataUrl(blob)
+  // 将 blob 转为 File 再压缩
+  const fileName = src.split('/').pop()?.split('?')[0] || 'image.jpg'
+  const file = new File([blob], fileName, { type: blob.type })
+  const compressedBlob = await compressImageFile(file, MAX_INPUT_IMAGE_BYTES)
+  const dataUrl = await blobToDataUrl(compressedBlob)
   const id = await storeImage(dataUrl, 'upload')
   cacheImage(id, dataUrl)
   useStore.getState().addInputImage({ id, dataUrl })
-}
-
-function fileToDataUrl(file: File): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader()
-    reader.onload = () => resolve(reader.result as string)
-    reader.onerror = reject
-    reader.readAsDataURL(file)
-  })
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {

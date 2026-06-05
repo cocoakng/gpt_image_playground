@@ -470,6 +470,10 @@ async function parseResponsesApiStreamResponse(
 
 export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
   if (customProvider) {
+    const n = opts.params.n > 0 ? opts.params.n : 1
+    if (n > 1) {
+      return callCustomHttpImageApiConcurrent(opts, profile, customProvider, n)
+    }
     return callCustomHttpImageApi(opts, profile, customProvider)
   }
 
@@ -478,9 +482,52 @@ export async function callOpenAICompatibleImageApi(opts: CallApiOptions, profile
     : callImagesApi(opts, profile)
 }
 
+async function callCustomHttpImageApiConcurrent(opts: CallApiOptions, profile: ApiProfile, customProvider: CustomProviderDefinition, n: number): Promise<CallApiResult> {
+  const singleOpts = {
+    ...opts,
+    params: {
+      ...opts.params,
+      n: 1,
+    },
+  }
+  const results = await Promise.allSettled(
+    Array.from({ length: n }).map((_, requestIndex) => callCustomHttpImageApi({
+      ...singleOpts,
+      onPartialImage: opts.onPartialImage
+        ? (partial) => opts.onPartialImage?.({ ...partial, requestIndex })
+        : undefined,
+    }, profile, customProvider)),
+  )
+
+  const successfulResults = results
+    .filter((r): r is PromiseFulfilledResult<CallApiResult> => r.status === 'fulfilled')
+    .map((r) => r.value)
+
+  if (successfulResults.length === 0) {
+    const firstError = results.find((r): r is PromiseRejectedResult => r.status === 'rejected')
+    if (firstError) throw firstError.reason
+    throw new Error('所有并发请求均失败')
+  }
+
+  const images = successfulResults.flatMap((r) => r.images)
+  const actualParamsList = successfulResults.flatMap((r) =>
+    r.actualParamsList?.length ? r.actualParamsList : r.images.map(() => r.actualParams),
+  )
+  const revisedPrompts = successfulResults.flatMap((r) =>
+    r.revisedPrompts?.length ? r.revisedPrompts : r.images.map(() => undefined),
+  )
+  const rawImageUrls = successfulResults.flatMap((r) => r.rawImageUrls ?? [])
+  const actualParams = mergeActualParams(
+    successfulResults[0]?.actualParams ?? {},
+    { n: images.length },
+  )
+
+  return { images, actualParams, actualParamsList, revisedPrompts, ...(rawImageUrls.length ? { rawImageUrls } : {}) }
+}
+
 async function callImagesApi(opts: CallApiOptions, profile: ApiProfile, customProvider?: CustomProviderDefinition | null): Promise<CallApiResult> {
   const n = opts.params.n > 0 ? opts.params.n : 1
-  if ((profile.codexCli || (profile.streamImages && n > 1)) && n > 1) {
+  if (n > 1) {
     return callImagesApiConcurrent(opts, profile, n, customProvider)
   }
 
