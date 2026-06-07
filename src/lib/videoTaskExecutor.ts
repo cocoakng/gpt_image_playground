@@ -3,7 +3,7 @@
  * 负责视频生成任务的提交、轮询、恢复
  */
 
-import type { TaskRecord, VideoParams, VideoProfile } from '../types'
+import type { TaskRecord, VideoParams, VideoProfile, VideoReference, AudioReference } from '../types'
 import {
   submitVideoTask as submitVideoApiTask,
   pollVideoTask as pollVideoApiTask,
@@ -29,6 +29,10 @@ export interface VideoTaskOptions {
   inputImageIds?: string[]
   /** 已加载的参考图数据 */
   inputImages?: InputImageData[]
+  /** 多模态参考 - 视频 */
+  inputVideos?: VideoReference[]
+  /** 多模态参考 - 音频 */
+  inputAudios?: AudioReference[]
   onStatusUpdate: (taskId: string, patch: Partial<TaskRecord>) => void
   onTaskComplete: (taskId: string, videoUrl: string, coverImageId: string | null) => void
   onTaskError: (taskId: string, error: string) => void
@@ -52,6 +56,8 @@ export async function submitVideoTask(options: VideoTaskOptions): Promise<void> 
       profile: options.profile,
       model: options.model,
       inputImages: options.inputImages,
+      inputVideos: options.inputVideos,
+      inputAudios: options.inputAudios,
       signal: controller.signal,
     })
 

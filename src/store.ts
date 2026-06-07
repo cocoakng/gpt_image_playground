@@ -12,6 +12,8 @@ import type {
   VideoParams,
   VideoMode,
   VideoProfile,
+  VideoReference,
+  AudioReference,
   InputImage,
   MaskDraft,
   TaskRecord,
@@ -686,6 +688,7 @@ export function getPersistedState(state: AppState) {
       : {}),
     dismissedCodexCliPrompts: state.dismissedCodexCliPrompts,
     appMode: state.appMode,
+    videoMode: state.videoMode,
     galleryInputDraft: settings.persistInputOnRestart && galleryInputDraft
       ? { ...galleryInputDraft, inputImages: galleryInputDraft.inputImages.map((img) => ({ id: img.id, dataUrl: '' })) }
       : null,
@@ -730,6 +733,9 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
       ? persisted.activeAgentConversationId
       : agentConversations[0]?.id ?? null
   const appMode = persisted.appMode === 'agent' ? 'agent' : persisted.appMode === 'video' ? 'video' : 'gallery'
+  const videoMode = persisted.videoMode === 'image' || persisted.videoMode === 'multi'
+    ? persisted.videoMode
+    : 'text'
   const galleryInputDraft = settings.persistInputOnRestart
     ? normalizeAgentInputDraft(persisted.galleryInputDraft ?? {
         prompt: persisted.prompt,
@@ -765,6 +771,7 @@ function mergePersistedState(persistedState: unknown, currentState: AppState): A
     ...persisted,
     settings,
     appMode,
+    videoMode,
     galleryInputDraft: galleryInputDraft && !isEmptyAgentInputDraft(galleryInputDraft) ? galleryInputDraft : null,
     agentConversations,
     activeAgentConversationId,
@@ -823,6 +830,16 @@ interface AppState {
   setVideoParams: (p: VideoParams) => void
   videoMode: VideoMode
   setVideoMode: (mode: VideoMode) => void
+  /** 多模态参考 - 视频 */
+  referenceVideos: VideoReference[]
+  /** 多模态参考 - 音频 */
+  referenceAudios: AudioReference[]
+  addVideoFromFile: (file: File) => Promise<void>
+  removeVideoReference: (idx: number) => void
+  addAudioFromFile: (file: File) => Promise<void>
+  removeAudioReference: (idx: number) => void
+  moveVideoReference: (fromIdx: number, toIdx: number) => void
+  moveAudioReference: (fromIdx: number, toIdx: number) => void
   videoProfiles: VideoProfile[]
   setVideoProfiles: (profiles: VideoProfile[]) => void
   activeVideoProfileId: string
@@ -1557,7 +1574,82 @@ export const useStore = create<AppState>()(
       videoParams: DEFAULT_VIDEO_PARAMS,
       setVideoParams: (videoParams) => set({ videoParams }),
       videoMode: 'text',
-      setVideoMode: (videoMode) => set((s) => s.videoMode === videoMode ? s : { videoMode, inputImages: [] }),
+      setVideoMode: (videoMode) => set((s) => ({ videoMode })),
+      referenceVideos: [],
+      referenceAudios: [],
+      addVideoFromFile: async (file) => {
+        const state = useStore.getState()
+        if (state.referenceVideos.length >= 3) {
+          state.showToast('最多上传 3 个视频', 'error')
+          return
+        }
+        const duration = await getMediaDuration(file)
+        const totalDuration = state.referenceVideos.reduce((sum, v) => sum + v.duration, 0)
+        if (totalDuration + duration > 15) {
+          state.showToast('视频总时长不能超过 15s', 'error')
+          return
+        }
+        const id = genId()
+        const dataUrl = URL.createObjectURL(file)
+        const thumbnailDataUrl = await generateVideoThumbnail(file)
+        set((s) => ({
+          referenceVideos: [...s.referenceVideos, { id, dataUrl, thumbnailDataUrl, fileName: file.name, duration }],
+        }))
+      },
+      removeVideoReference: (idx) => {
+        set((s) => {
+          const video = s.referenceVideos[idx]
+          if (video) URL.revokeObjectURL(video.dataUrl)
+          const next = s.referenceVideos.filter((_, i) => i !== idx)
+          return { referenceVideos: next }
+        })
+      },
+      addAudioFromFile: async (file) => {
+        const state = useStore.getState()
+        if (state.referenceAudios.length >= 3) {
+          state.showToast('最多上传 3 个音频', 'error')
+          return
+        }
+        const duration = await getMediaDuration(file)
+        const totalDuration = state.referenceAudios.reduce((sum, a) => sum + a.duration, 0)
+        if (totalDuration + duration > 15) {
+          state.showToast('音频总时长不能超过 15s', 'error')
+          return
+        }
+        const id = genId()
+        const dataUrl = URL.createObjectURL(file)
+        set((s) => ({
+          referenceAudios: [...s.referenceAudios, { id, dataUrl, fileName: file.name, duration }],
+        }))
+      },
+      removeAudioReference: (idx) => {
+        set((s) => {
+          const audio = s.referenceAudios[idx]
+          if (audio) URL.revokeObjectURL(audio.dataUrl)
+          const next = s.referenceAudios.filter((_, i) => i !== idx)
+          return { referenceAudios: next }
+        })
+      },
+      moveVideoReference: (fromIdx, toIdx) => {
+        set((s) => {
+          const items = [...s.referenceVideos]
+          if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx > items.length) return s
+          const [moved] = items.splice(fromIdx, 1)
+          const insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx
+          items.splice(insertIdx, 0, moved)
+          return { referenceVideos: items }
+        })
+      },
+      moveAudioReference: (fromIdx, toIdx) => {
+        set((s) => {
+          const items = [...s.referenceAudios]
+          if (fromIdx < 0 || fromIdx >= items.length || toIdx < 0 || toIdx > items.length) return s
+          const [moved] = items.splice(fromIdx, 1)
+          const insertIdx = toIdx > fromIdx ? toIdx - 1 : toIdx
+          items.splice(insertIdx, 0, moved)
+          return { referenceAudios: items }
+        })
+      },
 
       // Video profiles
       videoProfiles: [],
@@ -1708,6 +1800,58 @@ useStore.subscribe((state) => {
 let uid = 0
 function genId(): string {
   return Date.now().toString(36) + (++uid).toString(36) + Math.random().toString(36).slice(2, 6)
+}
+
+/** 获取媒体文件时长（秒） */
+function getMediaDuration(file: File): Promise<number> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const media = document.createElement(file.type.startsWith('video') ? 'video' : 'audio')
+    media.preload = 'metadata'
+    media.onloadedmetadata = () => {
+      URL.revokeObjectURL(url)
+      resolve(media.duration)
+    }
+    media.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(0)
+    }
+    media.src = url
+  })
+}
+
+/** 从视频文件生成缩略图（取第 0.5s 帧） */
+function generateVideoThumbnail(file: File): Promise<string | undefined> {
+  return new Promise((resolve) => {
+    const url = URL.createObjectURL(file)
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.onloadeddata = () => {
+      video.currentTime = Math.min(0.5, video.duration / 2)
+    }
+    video.onseeked = () => {
+      const canvas = document.createElement('canvas')
+      const size = 120
+      const scale = Math.min(size / video.videoWidth, size / video.videoHeight)
+      canvas.width = video.videoWidth * scale
+      canvas.height = video.videoHeight * scale
+      const ctx = canvas.getContext('2d')
+      if (!ctx) {
+        URL.revokeObjectURL(url)
+        resolve(undefined)
+        return
+      }
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height)
+      URL.revokeObjectURL(url)
+      resolve(canvas.toDataURL('image/jpeg', 0.8))
+    }
+    video.onerror = () => {
+      URL.revokeObjectURL(url)
+      resolve(undefined)
+    }
+    video.src = url
+  })
 }
 
 function getPersistableRawResponsePayload(rawResponsePayload?: string) {
@@ -2077,7 +2221,8 @@ async function storeCoverImageToDb(url: string): Promise<string> {
 
 /** Execute a video task via the video task executor */
 async function executeVideoTaskFn(taskId: string, profile: VideoProfile) {
-  const task = useStore.getState().tasks.find((t) => t.id === taskId)
+  const state = useStore.getState()
+  const task = state.tasks.find((t) => t.id === taskId)
   if (!task || !task.videoParams) return
 
   // 加载参考图数据
@@ -2092,14 +2237,20 @@ async function executeVideoTaskFn(taskId: string, profile: VideoProfile) {
     }
   }
 
+  // 多模态参考 - 视频和音频（从 store 当前状态获取）
+  const inputVideos = state.referenceVideos.length > 0 ? state.referenceVideos : undefined
+  const inputAudios = state.referenceAudios.length > 0 ? state.referenceAudios : undefined
+
+  const { submitVideoTask } = await import('./lib/videoTaskExecutor')
   await submitVideoTask({
     prompt: task.prompt,
     params: task.videoParams,
     profile,
     taskId,
-    model: profile.model,
-    inputImageIds: task.inputImageIds.length > 0 ? task.inputImageIds : undefined,
+    model: task.videoParams.model,
     inputImages,
+    inputVideos,
+    inputAudios,
     onStatusUpdate: (id, patch) => {
       updateTaskInStore(id, patch)
       if (patch.volcengineTaskId) {
@@ -2590,7 +2741,7 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     task.taskType = 'video'
     task.videoProfileId = videoProfile.id
     task.videoProfileName = videoProfile.name
-    task.videoModel = videoProfile.model
+    task.videoModel = useStore.getState().videoParams.model || undefined
     task.videoParams = useStore.getState().videoParams
     task.volcengineRecoverable = false
     useStore.getState().setTasks([task, ...useStore.getState().tasks])
@@ -4656,7 +4807,7 @@ export async function retryVideoTask(task: TaskRecord) {
     taskType: 'video',
     videoProfileId: videoProfile.id,
     videoProfileName: videoProfile.name,
-    videoModel: videoProfile.model,
+    videoModel: useStore.getState().videoParams.model || undefined,
     videoParams: task.videoParams,
     volcengineRecoverable: false,
   }

@@ -25,6 +25,8 @@ import {
   switchApiProfileProvider,
   createDefaultVideoProfile,
   validateVideoProfile,
+  DEFAULT_VIDEO_BASE_URL,
+  DEFAULT_API_TIMEOUT,
   DEFAULT_VIDEO_PROFILE_ID,
 } from '../lib/apiProfiles'
 import { copyTextToClipboard, getClipboardFailureMessage } from '../lib/clipboard'
@@ -304,7 +306,8 @@ function VideoConfigTab() {
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
 
   const [editingId, setEditingId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState<Omit<VideoProfile, 'id'>>({ name: '', baseUrl: '', apiKey: '', model: '', timeout: DEFAULT_SETTINGS.profiles[0]?.timeout ?? 600 })
+  const [editForm, setEditForm] = useState<Omit<VideoProfile, 'id'>>({ name: '', baseUrl: DEFAULT_VIDEO_BASE_URL, apiKey: '', timeout: DEFAULT_API_TIMEOUT, notes: '' })
+  const [showVideoApiKey, setShowVideoApiKey] = useState(false)
 
   const activeProfile = videoProfiles.find((p) => p.id === activeVideoProfileId)
 
@@ -320,8 +323,8 @@ function VideoConfigTab() {
       name: newProfile.name,
       baseUrl: newProfile.baseUrl,
       apiKey: newProfile.apiKey,
-      model: newProfile.model,
       timeout: newProfile.timeout,
+      notes: '',
     })
   }
 
@@ -336,8 +339,8 @@ function VideoConfigTab() {
       name: profile.name,
       baseUrl: profile.baseUrl,
       apiKey: profile.apiKey,
-      model: profile.model,
       timeout: profile.timeout,
+      notes: profile.notes ?? '',
     })
   }
 
@@ -425,41 +428,70 @@ function VideoConfigTab() {
                     <span className="text-xs text-gray-500 dark:text-gray-400">API 地址</span>
                     <input
                       type="text"
-                      value={editForm.baseUrl}
-                      onChange={(e) => setEditForm({ ...editForm, baseUrl: e.target.value })}
-                      placeholder="https://api.example.com/v1"
-                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                      value={editForm.baseUrl || DEFAULT_VIDEO_BASE_URL}
+                      disabled
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-gray-50/80 dark:bg-white/[0.02] px-3 py-2 text-sm text-gray-500 dark:text-gray-400 opacity-70 cursor-not-allowed outline-none"
                     />
                   </label>
                   <label className="block">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">API Key</span>
-                    <input
-                      type="password"
-                      value={editForm.apiKey}
-                      onChange={(e) => setEditForm({ ...editForm, apiKey: e.target.value })}
-                      placeholder="sk-..."
-                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
-                    />
-                  </label>
-                  <label className="block">
-                    <span className="text-xs text-gray-500 dark:text-gray-400">模型</span>
-                    <input
-                      type="text"
-                      value={editForm.model}
-                      onChange={(e) => setEditForm({ ...editForm, model: e.target.value })}
-                      placeholder="video-model-v1"
-                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
-                    />
+                    <div className="mb-1.5 flex items-center justify-between">
+                      <span className="text-xs text-gray-500 dark:text-gray-400">API Key</span>
+                      <a
+                        href="https://www.ai-link.shop"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-xs text-blue-500 hover:text-blue-600 dark:text-blue-400 dark:hover:text-blue-300 transition-colors"
+                      >
+                        前往获取 →
+                      </a>
+                    </div>
+                    <div className="relative">
+                      <input
+                        type={showVideoApiKey ? 'text' : 'password'}
+                        value={editForm.apiKey}
+                        onChange={(e) => setEditForm({ ...editForm, apiKey: e.target.value })}
+                        placeholder="sk-..."
+                        className="w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 pr-10 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowVideoApiKey((v) => !v)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 p-1 text-gray-400 hover:text-gray-600 transition-colors"
+                        tabIndex={-1}
+                      >
+                        {showVideoApiKey ? (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+                            <circle cx="12" cy="12" r="3" />
+                          </svg>
+                        ) : (
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+                            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                            <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                            <path d="M14.12 14.12a3 3 0 1 1-4.24-4.24" />
+                            <line x1="1" y1="1" x2="23" y2="23" />
+                          </svg>
+                        )}
+                      </button>
+                    </div>
                   </label>
                   <label className="block">
                     <span className="text-xs text-gray-500 dark:text-gray-400">超时（秒）</span>
                     <input
-                      type="number"
-                      value={editForm.timeout}
-                      onChange={(e) => setEditForm({ ...editForm, timeout: parseInt(e.target.value) || 600 })}
-                      min={30}
-                      max={3600}
-                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50"
+                      type="text"
+                      value={`${editForm.timeout}s`}
+                      disabled
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-gray-50/80 dark:bg-white/[0.02] px-3 py-2 text-sm text-gray-500 dark:text-gray-400 opacity-70 cursor-not-allowed outline-none"
+                    />
+                  </label>
+                  <label className="block">
+                    <span className="text-xs text-gray-500 dark:text-gray-400">备注</span>
+                    <textarea
+                      value={editForm.notes}
+                      onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                      placeholder="可选，标记用途、渠道等信息..."
+                      rows={2}
+                      className="mt-1 w-full rounded-lg border border-gray-200/70 bg-white/60 px-3 py-2 text-sm text-gray-700 placeholder-gray-400 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 resize-none"
                     />
                   </label>
                   <div className="flex gap-2">
@@ -478,9 +510,9 @@ function VideoConfigTab() {
                       <span className={`inline-block h-2 w-2 rounded-full ${profile.id === activeVideoProfileId ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`} />
                       <span className="font-medium text-sm text-gray-800 dark:text-gray-200 truncate">{profile.name}</span>
                     </div>
-                    <div className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 truncate font-mono">
-                      {profile.model || '未设置模型'}
-                    </div>
+                    {profile.notes && (
+                      <div className="mt-0.5 text-xs text-gray-400 dark:text-gray-500 truncate">{profile.notes}</div>
+                    )}
                   </button>
                   <button type="button" onClick={() => handleEdit(profile)} className="p-1.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-lg hover:bg-gray-100 dark:hover:bg-white/10" title="编辑">
                     <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" /></svg>

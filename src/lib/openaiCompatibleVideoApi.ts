@@ -1,4 +1,4 @@
-import type { VideoParams, VideoProfile } from '../types'
+import type { VideoParams, VideoProfile, VideoReference, AudioReference } from '../types'
 import { buildApiUrl, isApiProxyAvailable } from './devProxy'
 
 export const VIDEO_POLL_INTERVAL_MS = 5000
@@ -24,6 +24,10 @@ export interface CallVideoApiOptions {
   model?: string
   /** 图生视频参考图 */
   inputImages?: InputImageData[]
+  /** 多模态参考 - 视频 */
+  inputVideos?: VideoReference[]
+  /** 多模态参考 - 音频 */
+  inputAudios?: AudioReference[]
   onTaskEnqueued?: (task: { taskId: string }) => void
   onStatusChange?: (status: string) => void
   signal?: AbortSignal
@@ -36,7 +40,7 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   const url = buildApiUrl(opts.profile.baseUrl, 'video/generations', null, useProxy)
 
   const body: Record<string, unknown> = {
-    model: opts.params.model || opts.model || opts.profile.model,
+    model: opts.params.model || opts.model,
     prompt: opts.prompt,
     // duration 转为整数（秒），Seedance 2.0 支持 4-15
     duration: normalizeDuration(opts.params.duration),
@@ -51,10 +55,39 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   if (opts.params.cameraFixed != null) body.camera_fixed = opts.params.cameraFixed
   if (opts.params.returnLastFrame != null) body.return_last_frame = opts.params.returnLastFrame
 
-  // 图生视频：附加参考图
+  // 图生视频：附加参考图，根据图片数量设置 role
   if (opts.inputImages && opts.inputImages.length > 0) {
-    body.images = opts.inputImages.map((img) => ({
-      image_url: img.dataUrl,
+    const imgCount = opts.inputImages.length
+    body.images = opts.inputImages.map((img, idx) => {
+      let role: string
+      if (imgCount === 1) {
+        role = 'first_frame'
+      } else if (imgCount === 2) {
+        role = idx === 0 ? 'first_frame' : 'last_frame'
+      } else {
+        // Multi mode: all images are reference_image
+        role = 'reference_image'
+      }
+      return {
+        image_url: img.dataUrl,
+        role,
+      }
+    })
+  }
+
+  // 多模态参考 - 视频
+  if (opts.inputVideos && opts.inputVideos.length > 0) {
+    body.videos = opts.inputVideos.map((vid) => ({
+      video_url: vid.dataUrl,
+      role: 'reference_video',
+    }))
+  }
+
+  // 多模态参考 - 音频
+  if (opts.inputAudios && opts.inputAudios.length > 0) {
+    body.audios = opts.inputAudios.map((aud) => ({
+      audio_url: aud.dataUrl,
+      role: 'reference_audio',
     }))
   }
 

@@ -43,17 +43,17 @@ export const DEFAULT_VIDEO_PARAMS: VideoParams = {
 }
 
 export const DEFAULT_VIDEO_PROFILE_ID = 'default-video'
-export const DEFAULT_VIDEO_MODEL = ''
+export const DEFAULT_VIDEO_BASE_URL = 'https://www.ai-link.shop/v1'
 
 export function normalizeVideoProfile(input: unknown, fallback?: Partial<VideoProfile>): VideoProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   return {
     id: typeof record.id === 'string' && record.id.trim() ? record.id : fallback?.id ?? DEFAULT_VIDEO_PROFILE_ID,
     name: typeof record.name === 'string' && record.name.trim() ? record.name : fallback?.name ?? '视频配置',
-    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl.trim() : fallback?.baseUrl ?? '',
+    baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl.trim() : fallback?.baseUrl ?? DEFAULT_VIDEO_BASE_URL,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : fallback?.apiKey ?? '',
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : fallback?.model ?? DEFAULT_VIDEO_MODEL,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : fallback?.timeout ?? DEFAULT_API_TIMEOUT,
+    notes: typeof record.notes === 'string' ? record.notes : fallback?.notes ?? '',
   }
 }
 
@@ -61,10 +61,10 @@ export function createDefaultVideoProfile(overrides: Partial<VideoProfile> = {})
   return {
     id: DEFAULT_VIDEO_PROFILE_ID,
     name: '视频配置',
-    baseUrl: '',
+    baseUrl: DEFAULT_VIDEO_BASE_URL,
     apiKey: '',
-    model: DEFAULT_VIDEO_MODEL,
     timeout: DEFAULT_API_TIMEOUT,
+    notes: '',
     ...overrides,
   }
 }
@@ -75,7 +75,6 @@ export function getActiveVideoProfile(settings: AppSettings): VideoProfile | nul
 
 export function validateVideoProfile(profile: VideoProfile): string | null {
   if (!profile.apiKey) return '请填写 API Key'
-  if (!profile.baseUrl) return '请填写 API 地址'
   return null
 }
 

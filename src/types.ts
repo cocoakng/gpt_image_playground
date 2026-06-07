@@ -88,8 +88,8 @@ export interface VideoProfile {
   name: string
   baseUrl: string
   apiKey: string
-  model: string
   timeout: number
+  notes?: string
 }
 
 export interface AppSettings {
@@ -173,8 +173,8 @@ export const DEFAULT_VIDEO_PARAMS: VideoParams = {
 
 // ===== 视频模式 =====
 
-/** 视频生成模式：文生视频 / 图生视频-首帧 / 图生视频-首尾帧 */
-export type VideoMode = 'text' | 'first-frame' | 'first-last-frame'
+/** 视频生成模式：文生视频 / 图生视频 / 多模态参考 */
+export type VideoMode = 'text' | 'image' | 'multi'
 
 // ===== 火山引擎视频响应 =====
 
@@ -198,6 +198,25 @@ export interface InputImage {
   id: string
   /** data URL，用于预览 */
   dataUrl: string
+}
+
+/** 多模态参考 - 视频 */
+export interface VideoReference {
+  id: string
+  /** blob URL（视频文件太大不用 data URL） */
+  dataUrl: string
+  /** 首帧缩略图 data URL */
+  thumbnailDataUrl?: string
+  fileName: string
+  duration: number
+}
+
+/** 多模态参考 - 音频 */
+export interface AudioReference {
+  id: string
+  dataUrl: string
+  fileName: string
+  duration: number
 }
 
 export interface MaskDraft {
