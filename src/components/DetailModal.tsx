@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, showCodexCliPrompt, getCodexCliPromptKey, retryTask } from '../store'
+import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, showCodexCliPrompt, getCodexCliPromptKey, retryTask, retryVideoTask } from '../store'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
@@ -225,6 +225,7 @@ export default function DetailModal() {
   const showSourceInfo = Boolean(task.apiProvider || task.apiProfileName || task.apiModel)
   const isFalReconnecting = task.status === 'error' && task.falRecoverable
   const isCustomReconnecting = task.status === 'error' && task.customRecoverable
+  const isVideoReconnecting = task.status === 'error' && task.volcengineRecoverable
   const rawImageUrls = task.rawImageUrls ?? []
   const streamPreviewLen = streamPreviewItems.length
   const currentStreamPreviewSrc = activeStreamPreviewSrc
@@ -348,6 +349,31 @@ export default function DetailModal() {
     document.body.removeChild(a)
   }
 
+  const handleCopyVideoParams = async () => {
+    if (!task?.videoParams) return
+    const paramText = Object.entries(task.videoParams)
+      .filter(([, v]) => v != null && v !== '')
+      .map(([k, v]) => `${k}: ${v}`)
+      .join('\n')
+    try {
+      await copyTextToClipboard(`${task.prompt}\n---\n${paramText}`)
+      showToast('提示词和参数已复制', 'success')
+    } catch {
+      showToast('复制失败', 'error')
+    }
+  }
+
+  const handleRetryVideo = () => {
+    if (!task) return
+    setConfirmDialog({
+      title: '重新生成视频',
+      message: '将使用相同的参数重新提交视频生成任务，是否继续？',
+      showCancel: true,
+      confirmText: '重新生成',
+      action: () => void retryVideoTask(task),
+    })
+  }
+
   const handleDownloadAllOutputs = async (e: React.MouseEvent) => {
     e.stopPropagation()
     if (!task?.outputImages?.length) return
@@ -468,6 +494,14 @@ export default function DetailModal() {
                 coverUrl={videoCoverPreview || undefined}
                 className="max-h-[80vh]"
               />
+              {task.finishedAt && Date.now() - task.finishedAt > 12 * 60 * 60 * 1000 && (
+                <div className="mt-2 flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-700 dark:bg-amber-500/10 dark:text-amber-400">
+                  <svg className="h-4 w-4 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                  <span>视频链接可能已过期，如无法播放请使用「重新生成」获取新的视频。</span>
+                </div>
+              )}
             </div>
           )}
           {task.status === 'done' && outputLen > 0 && currentOutputPreviewSrc && (
@@ -546,14 +580,24 @@ export default function DetailModal() {
               )}
             </>
           )}
-          {(task.status === 'running' || isFalReconnecting) && (
+          {(task.status === 'running' || isFalReconnecting || isCustomReconnecting || isVideoReconnecting) && (
             <>
-              <div className="absolute left-4 top-4 flex items-center gap-1 bg-black/50 text-white text-xs px-2 py-0.5 rounded backdrop-blur-sm font-mono">
+              <div className="absolute left-4 top-4 flex items-center gap-1.5 bg-black/50 text-white text-xs px-2 py-0.5 rounded backdrop-blur-sm font-mono">
                 <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
                 </svg>
                 {formatDuration()}
               </div>
+              {task.taskType === 'video' && task.videoStatus && (
+                <div className="absolute right-4 top-4 bg-black/50 text-white text-xs px-2 py-0.5 rounded backdrop-blur-sm">
+                  {(() => {
+                    const labels: Record<string, string> = {
+                      submitted: '已提交', queued: '排队中', running: '生成中', processing: '处理中',
+                    }
+                    return labels[task.videoStatus!] || '生成中...'
+                  })()}
+                </div>
+              )}
               {task.status === 'running' && streamPreviewLen > 0 && (
                 <>
                   {currentStreamPreviewSrc ? (
@@ -602,10 +646,20 @@ export default function DetailModal() {
                 </>
               )}
               {task.status === 'running' && streamPreviewLen === 0 && (
-                <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
-                  <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
-                  <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
-                </svg>
+                <div className="flex flex-col items-center gap-2">
+                  <svg className="w-10 h-10 text-blue-400 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+                  </svg>
+                  {task.taskType === 'video' && task.videoStatus && (
+                    <span className="text-sm text-white/80">{(() => {
+                      const labels: Record<string, string> = {
+                        submitted: '已提交', queued: '排队中', running: '生成中', processing: '处理中',
+                      }
+                      return labels[task.videoStatus!] || '生成中...'
+                    })()}</span>
+                  )}
+                </div>
               )}
             </>
           )}
@@ -786,19 +840,50 @@ export default function DetailModal() {
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">输入内容将在响应完成时接收</p>
               </div>
             ) : (
-              <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap mb-4">
-                {task.prompt || '(无提示词)'}
-              </p>
+              <div className="mb-4">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-sm text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap flex-1">
+                    {task.prompt || '(无提示词)'}
+                  </p>
+                  <button
+                    onClick={handleCopyPrompt}
+                    className="shrink-0 p-1.5 rounded-lg text-gray-400 hover:bg-gray-100 dark:text-gray-500 dark:hover:bg-white/[0.06] transition"
+                    title="复制提示词"
+                  >
+                    <CopyIcon className="h-4 w-4" />
+                  </button>
+                </div>
+              </div>
             )}
             {task.videoUrl && (
-              <button
-                onClick={handleDownloadVideo}
-                className="mb-4 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium"
-                title="下载视频"
-              >
-                <DownloadIcon className="h-4 w-4" />
-                下载视频
-              </button>
+              <div className="mb-4 flex flex-wrap gap-2">
+                <button
+                  onClick={handleDownloadVideo}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 hover:bg-blue-100 dark:hover:bg-blue-500/20 transition text-sm font-medium"
+                  title="下载视频"
+                >
+                  <DownloadIcon className="h-4 w-4" />
+                  下载视频
+                </button>
+                <button
+                  onClick={handleCopyVideoParams}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/[0.05] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] transition text-sm font-medium"
+                  title="复制提示词和参数"
+                >
+                  <CopyIcon className="h-4 w-4" />
+                  复制参数
+                </button>
+                <button
+                  onClick={handleRetryVideo}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-gray-50 dark:bg-white/[0.05] text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-white/[0.08] transition text-sm font-medium"
+                  title="使用相同参数重新生成"
+                >
+                  <svg className="h-4 w-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                  </svg>
+                  重新生成
+                </button>
+              </div>
             )}
             {showRevisedPrompt && currentRevisedPrompt && (
               <div className="mb-4">
@@ -917,7 +1002,7 @@ export default function DetailModal() {
                 )}
                 {task.videoParams?.seed != null && task.videoParams.seed > 0 && (
                   <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                    <span className="text-gray-400 dark:text-gray-500">种子</span>
+                    <span className="text-gray-400 dark:text-gray-500">随机种子</span>
                     <br />
                     <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.seed}</span>
                   </div>

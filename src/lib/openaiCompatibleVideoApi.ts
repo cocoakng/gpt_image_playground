@@ -36,7 +36,7 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   const url = buildApiUrl(opts.profile.baseUrl, 'video/generations', null, useProxy)
 
   const body: Record<string, unknown> = {
-    model: opts.model || opts.profile.model,
+    model: opts.params.model || opts.model || opts.profile.model,
     prompt: opts.prompt,
     // duration 转为整数（秒），Seedance 2.0 支持 4-15
     duration: normalizeDuration(opts.params.duration),
@@ -49,6 +49,7 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   if (opts.params.watermark != null) body.watermark = opts.params.watermark
   if (opts.params.generateAudio != null) body.generate_audio = opts.params.generateAudio
   if (opts.params.cameraFixed != null) body.camera_fixed = opts.params.cameraFixed
+  if (opts.params.returnLastFrame != null) body.return_last_frame = opts.params.returnLastFrame
 
   // 图生视频：附加参考图
   if (opts.inputImages && opts.inputImages.length > 0) {

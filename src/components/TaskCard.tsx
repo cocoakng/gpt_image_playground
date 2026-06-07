@@ -1,10 +1,11 @@
 import { useEffect, useState, useRef, type ReactNode } from 'react'
 import type { TaskRecord } from '../types'
-import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, retryTask } from '../store'
+import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, retryTask, retryVideoTask } from '../store'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
 import { isAgentTaskPromptPending } from '../lib/taskPromptDisplay'
+import { getVideoStatusLabel, getVideoStatusIcon } from '../lib/videoStatus'
 import { CodeIcon } from './icons'
 import ViewportTooltip from './ViewportTooltip'
 
@@ -283,7 +284,7 @@ export default function TaskCard({
 
   const duration = (() => {
     let seconds: number
-    if (task.status === 'running' || task.falRecoverable || task.customRecoverable) {
+    if (task.status === 'running' || task.falRecoverable || task.customRecoverable || task.volcengineRecoverable) {
       seconds = Math.floor((now - task.createdAt) / 1000)
     } else if (task.elapsed != null) {
       seconds = Math.floor(task.elapsed / 1000)
@@ -416,26 +417,59 @@ export default function TaskCard({
           )}
           {task.status === 'running' && (!streamPreviewSrc || !streamPreviewLoaded) && (
             <div className="flex flex-col items-center gap-2">
-              <svg
-                className="w-8 h-8 text-blue-400 animate-spin"
-                fill="none"
-                viewBox="0 0 24 24"
-              >
-                <circle
-                  className="opacity-25"
-                  cx="12"
-                  cy="12"
-                  r="10"
-                  stroke="currentColor"
-                  strokeWidth="4"
-                />
-                <path
-                  className="opacity-75"
-                  fill="currentColor"
-                  d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
-                />
-              </svg>
-              <span className="text-xs text-gray-400 dark:text-gray-500">生成中...</span>
+              {task.videoStatus ? (
+                <>
+                  {getVideoStatusIcon(task.videoStatus) === 'clock' ? (
+                    <svg className="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                  ) : (
+                    <svg
+                      className="w-8 h-8 text-blue-400 animate-spin"
+                      fill="none"
+                      viewBox="0 0 24 24"
+                    >
+                      <circle
+                        className="opacity-25"
+                        cx="12"
+                        cy="12"
+                        r="10"
+                        stroke="currentColor"
+                        strokeWidth="4"
+                      />
+                      <path
+                        className="opacity-75"
+                        fill="currentColor"
+                        d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                      />
+                    </svg>
+                  )}
+                  <span className="text-xs text-gray-400 dark:text-gray-500">{getVideoStatusLabel(task.videoStatus)}</span>
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="w-8 h-8 text-blue-400 animate-spin"
+                    fill="none"
+                    viewBox="0 0 24 24"
+                  >
+                    <circle
+                      className="opacity-25"
+                      cx="12"
+                      cy="12"
+                      r="10"
+                      stroke="currentColor"
+                      strokeWidth="4"
+                    />
+                    <path
+                      className="opacity-75"
+                      fill="currentColor"
+                      d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"
+                    />
+                  </svg>
+                  <span className="text-xs text-gray-400 dark:text-gray-500">生成中...</span>
+                </>
+              )}
             </div>
           )}
           {task.status === 'error' && (isFalReconnecting || isCustomReconnecting || isVideoReconnecting) && (
@@ -694,7 +728,7 @@ export default function TaskCard({
               {((task.status === 'error' && !isFalReconnecting && !isCustomReconnecting && !isVideoReconnecting) || settings.alwaysShowRetryButton) && (
                 <TaskActionButton
                   tooltip="重试任务"
-                  onClick={() => retryTask(task)}
+                  onClick={() => task.taskType === 'video' ? retryVideoTask(task) : retryTask(task)}
                   className="p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-950/30 text-gray-400 hover:text-blue-500 transition"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">

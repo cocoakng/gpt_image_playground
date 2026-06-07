@@ -116,8 +116,8 @@ export default function VideoInputBar() {
   }
 
   return (
-    <div className="safe-area-x fixed bottom-0 left-0 right-0 z-30 bg-white/90 dark:bg-gray-950/90 backdrop-blur border-t border-gray-200 dark:border-white/[0.08]">
-      <div className="max-w-7xl mx-auto px-4 py-3">
+    <div data-video-input-bar className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-4xl px-3 sm:px-4 transition-all duration-300">
+      <div className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10">
         {/* Mode selector tabs */}
         <div className="mb-2 flex items-center gap-1.5">
           <div className="flex items-center gap-0 rounded-lg border border-gray-200 dark:border-white/[0.08] bg-gray-100/70 dark:bg-white/[0.04] p-0.5">

@@ -144,7 +144,12 @@ export const DEFAULT_PARAMS: TaskParams = {
 
 // ===== 视频参数 =====
 
+/** Seedance 2.0 支持的模型 ID */
+export type VideoModel = 'seedance-2.0-260128' | 'seedance-2.0-fast-260128' | 'seedance-1.5-pro' | string
+
 export interface VideoParams {
+  /** 生成模型 */
+  model?: string
   resolution: '480p' | '720p' | '1080p'
   duration: number
   ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '21:9' | 'adaptive'
@@ -156,6 +161,8 @@ export interface VideoParams {
   generateAudio?: boolean
   /** 是否固定镜头 */
   cameraFixed?: boolean
+  /** 是否返回尾帧图片 */
+  returnLastFrame?: boolean
 }
 
 export const DEFAULT_VIDEO_PARAMS: VideoParams = {
@@ -231,6 +238,8 @@ export interface TaskRecord {
   volcengineTaskId?: string
   /** 火山引擎视频任务是否等待自动恢复 */
   volcengineRecoverable?: boolean
+  /** 视频平台返回的详细任务状态，如 submitted/queued/running/succeed/failed */
+  videoStatus?: string
   /** 任务类型：image 或 video */
   taskType?: 'image' | 'video'
   /** 生成视频时使用的视频配置 ID */

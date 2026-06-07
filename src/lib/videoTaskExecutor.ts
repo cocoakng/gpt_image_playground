@@ -32,6 +32,8 @@ export interface VideoTaskOptions {
   onStatusUpdate: (taskId: string, patch: Partial<TaskRecord>) => void
   onTaskComplete: (taskId: string, videoUrl: string, coverImageId: string | null) => void
   onTaskError: (taskId: string, error: string) => void
+  /** 可选：任务状态变化回调，供前端展示进度 */
+  onVideoStatusChange?: (taskId: string, videoStatus: string) => void
 }
 
 // ===== 提交视频任务 =====
@@ -92,7 +94,13 @@ async function pollVideoTaskWithRecovery(
       options.profile,
       controller.signal,
       (status) => {
-        options.onStatusUpdate(options.taskId, { status: 'running' as const })
+        // 更新 store 中的详细状态
+        options.onStatusUpdate(options.taskId, {
+          status: 'running' as const,
+          videoStatus: status,
+        })
+        // 通知 UI 展示进度
+        options.onVideoStatusChange?.(options.taskId, status)
       },
     )
 

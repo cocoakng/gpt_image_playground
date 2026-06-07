@@ -4630,6 +4630,45 @@ export async function retryTask(task: TaskRecord) {
   executeTask(taskId)
 }
 
+/** 重试视频任务：使用相同参数重新生成 */
+export async function retryVideoTask(task: TaskRecord) {
+  const { settings, videoProfiles, activeVideoProfileId } = useStore.getState()
+  const videoProfile = videoProfiles?.find((p) => p.id === task.videoProfileId)
+    || videoProfiles?.find((p) => p.id === activeVideoProfileId)
+  if (!videoProfile || !videoProfile.apiKey) {
+    useStore.getState().showToast('请先完善视频 API 配置', 'error')
+    useStore.getState().setShowSettings(true, 'video')
+    return
+  }
+
+  const taskId = genId()
+  const newTask: TaskRecord = {
+    id: taskId,
+    prompt: task.prompt,
+    params: task.params,
+    inputImageIds: [...task.inputImageIds],
+    outputImages: [],
+    status: 'running',
+    error: null,
+    createdAt: Date.now(),
+    finishedAt: null,
+    elapsed: null,
+    taskType: 'video',
+    videoProfileId: videoProfile.id,
+    videoProfileName: videoProfile.name,
+    videoModel: videoProfile.model,
+    videoParams: task.videoParams,
+    volcengineRecoverable: false,
+  }
+
+  const latestTasks = useStore.getState().tasks
+  useStore.getState().setTasks([newTask, ...latestTasks])
+  await putTask(newTask)
+  useStore.getState().showToast('视频任务已重新提交', 'success')
+
+  void executeVideoTaskFn(taskId, videoProfile)
+}
+
 /** 复用配置 */
 export async function reuseConfig(task: TaskRecord) {
   const { settings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
