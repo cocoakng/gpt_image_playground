@@ -2625,6 +2625,59 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   const { settings, appMode, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
+  // 视频模式：直接走视频任务流程，跳过图片 API 校验
+  if (appMode === 'video') {
+    const videoProfile = getActiveVideoProfile({
+      videoProfiles: useStore.getState().videoProfiles,
+      activeVideoProfileId: useStore.getState().activeVideoProfileId,
+    } as any)
+    if (!videoProfile || !videoProfile.apiKey) {
+      showToast('请先完善视频 API 配置', 'error')
+      useStore.getState().setShowSettings(true, 'video')
+      return
+    }
+
+    const taskId = genId()
+    const task: TaskRecord = {
+      id: taskId,
+      prompt: prompt.trim(),
+      params: params,
+      apiProvider: 'video',
+      apiProfileId: '',
+      apiProfileName: '',
+      apiMode: 'images',
+      apiModel: '',
+      inputImageIds: inputImages.map((i) => i.id),
+      maskTargetImageId: null,
+      maskImageId: null,
+      outputImages: [],
+      status: 'running',
+      error: null,
+      createdAt: Date.now(),
+      finishedAt: null,
+      elapsed: null,
+    }
+
+    task.taskType = 'video'
+    task.videoProfileId = videoProfile.id
+    task.videoProfileName = videoProfile.name
+    task.videoModel = useStore.getState().videoParams.model || undefined
+    task.videoParams = useStore.getState().videoParams
+    task.volcengineRecoverable = false
+    useStore.getState().setTasks([task, ...useStore.getState().tasks])
+    await putTask(task)
+    showToast('视频任务已提交', 'success')
+
+    if (settings.clearInputAfterSubmit) {
+      useStore.getState().setPrompt('')
+      useStore.getState().clearInputImages()
+    }
+    useStore.getState().setReusedTaskApiProfile(null)
+
+    void executeVideoTaskFn(taskId, videoProfile)
+    return
+  }
+
   const normalizedSettings = normalizeSettings(settings)
   let activeProfile = getActiveApiProfile(settings)
   let requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
@@ -2724,38 +2777,6 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     createdAt: Date.now(),
     finishedAt: null,
     elapsed: null,
-  }
-
-  // Route to video task executor for video mode
-  if (appMode === 'video') {
-    const state = useStore.getState()
-    const videoProfile = getActiveVideoProfile({
-      videoProfiles: state.videoProfiles,
-      activeVideoProfileId: state.activeVideoProfileId,
-    } as any)
-    if (!videoProfile || !videoProfile.apiKey) {
-      showToast('请先完善视频 API 配置', 'error')
-      useStore.getState().setShowSettings(true, 'video')
-      return
-    }
-    task.taskType = 'video'
-    task.videoProfileId = videoProfile.id
-    task.videoProfileName = videoProfile.name
-    task.videoModel = useStore.getState().videoParams.model || undefined
-    task.videoParams = useStore.getState().videoParams
-    task.volcengineRecoverable = false
-    useStore.getState().setTasks([task, ...useStore.getState().tasks])
-    await putTask(task)
-    showToast('视频任务已提交', 'success')
-
-    if (settings.clearInputAfterSubmit) {
-      useStore.getState().setPrompt('')
-      useStore.getState().clearInputImages()
-    }
-    useStore.getState().setReusedTaskApiProfile(null)
-
-    void executeVideoTaskFn(taskId, videoProfile)
-    return
   }
 
   const latestTasks = useStore.getState().tasks
