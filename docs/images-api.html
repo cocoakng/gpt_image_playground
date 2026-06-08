@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI-Link.shop 生图 API 接口文档（OpenAI 官方参数）</title>
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  body { font-family: 'Noto Sans SC', 'Inter', sans-serif; }
+  .code-block { background: #0f172a; border-radius: 0.5rem; position: relative; }
+  .code-block pre { color: #e2e8f0; font-size: 0.8125rem; line-height: 1.6; overflow-x: auto; padding: 1.25rem; }
+  .copy-btn {
+    position: absolute; top: 0.5rem; right: 0.5rem;
+    background: rgba(255,255,255,0.08); color: #94a3b8;
+    border: 1px solid rgba(255,255,255,0.1); border-radius: 0.375rem;
+    padding: 0.25rem 0.625rem; font-size: 0.6875rem; cursor: pointer;
+    transition: all 0.15s;
+  }
+  .copy-btn:hover { background: rgba(255,255,255,0.15); color: #e2e8f0; }
+  .copy-btn.copied { color: #4ade80; }
+  .method-badge { font-size: 0.6875rem; font-weight: 700; padding: 0.125rem 0.5rem; border-radius: 0.25rem; letter-spacing: 0.02em; }
+  .method-post { background: #dcfce7; color: #166534; }
+  .nav-link { display: block; padding: 0.375rem 0.75rem; border-radius: 0.375rem; font-size: 0.875rem; color: #64748b; transition: all 0.15s; }
+  .nav-link:hover, .nav-link.active { background: #f1f5f9; color: #0f172a; }
+  .param-table th { background: #f8fafc; font-weight: 600; text-align: left; }
+  .param-table td, .param-table th { padding: 0.625rem 1rem; border-bottom: 1px solid #e2e8f0; font-size: 0.8125rem; }
+  .param-table tr:last-child td { border-bottom: none; }
+  .required { color: #dc2626; font-weight: 600; font-size: 0.6875rem; }
+  .optional { color: #64748b; font-size: 0.6875rem; }
+  .type-tag { background: #e0f2fe; color: #0369a1; font-size: 0.6875rem; padding: 0.0625rem 0.375rem; border-radius: 0.25rem; }
+  .model-tag { background: #f3e8ff; color: #7e22ce; font-size: 0.625rem; padding: 0.0625rem 0.375rem; border-radius: 0.25rem; font-weight: 500; }
+  .official-badge { background: #dcfce7; color: #166534; font-size: 0.625rem; padding: 0.0625rem 0.375rem; border-radius: 0.25rem; font-weight: 500; }
+  .custom-badge { background: #fee2e2; color: #991b1b; font-size: 0.625rem; padding: 0.0625rem 0.375rem; border-radius: 0.25rem; font-weight: 500; }
+  .toc-fixed { position: fixed; top: 0; left: 0; width: 16rem; height: 100vh; overflow-y: auto; border-right: 1px solid #e2e8f0; background: #fff; }
+  .main-content { margin-left: 16rem; }
+  @media (max-width: 1024px) {
+    .toc-fixed { display: none; }
+    .main-content { margin-left: 0; }
+  }
+  .section-anchor { scroll-margin-top: 1.5rem; }
+  .json-key { color: #7dd3fc; }
+  .json-string { color: #86efac; }
+  .json-number { color: #fca5a5; }
+  .json-bool { color: #fcd34d; }
+  .json-null { color: #94a3b8; }
+  .note-box { border-left: 3px solid #3b82f6; background: #eff6ff; padding: 0.75rem 1rem; border-radius: 0 0.375rem 0.375rem 0; font-size: 0.8125rem; color: #1e40af; }
+  .warn-box { border-left: 3px solid #f59e0b; background: #fffbeb; padding: 0.75rem 1rem; border-radius: 0 0.375rem 0.375rem 0; font-size: 0.8125rem; color: #92400e; }
+</style>
+</head>
+<body class="bg-white text-slate-800">
+
+<nav class="toc-fixed py-6 px-4">
+  <div class="mb-6 px-2">
+    <div class="text-sm font-bold text-slate-900">AI-Link.shop</div>
+    <div class="text-xs text-slate-500 mt-0.5">生图 API 文档（官方参数版）</div>
+  </div>
+  <div class="space-y-0.5">
+    <a href="#overview" class="nav-link active">接口概览</a>
+    <a href="#auth" class="nav-link">认证方式</a>
+    <a href="#generate" class="nav-link">文生图（Generations）</a>
+    <a href="#edit" class="nav-link">图编辑（Edits）</a>
+    <a href="#response" class="nav-link">响应说明</a>
+    <a href="#error" class="nav-link">错误码</a>
+    <a href="#sdk" class="nav-link">SDK 示例</a>
+  </div>
+  <div class="mt-8 px-2 pt-4 border-t border-slate-200">
+    <div class="text-xs text-slate-400">Base URL</div>
+    <code class="text-xs text-slate-700 block mt-0.5">https://www.ai-link.shop/v1</code>
+  </div>
+</nav>
+
+<main class="main-content">
+  <div class="max-w-3xl mx-auto px-8 py-10">
+
+    <div class="mb-10 pb-8 border-b border-slate-200">
+      <h1 class="text-3xl font-bold text-slate-900 tracking-tight">AI-Link.shop 生图 API</h1>
+      <p class="text-slate-500 mt-2 text-sm">兼容 OpenAI Images API 官方参数规范</p>
+      <div class="flex items-center gap-3 mt-4">
+        <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-emerald-50 text-emerald-700 text-xs font-medium">
+          <span class="w-1.5 h-1.5 rounded-full bg-emerald-500"></span> 在线可用
+        </span>
+        <span class="text-xs text-slate-400">OpenAI Images API 兼容</span>
+      </div>
+    </div>
+
+    <div class="warn-box mb-8">
+      <strong>参数来源说明：</strong>本文档仅收录 <span class="official-badge">OpenAI 官方</span> 参数。
+      <span class="custom-badge">项目自定义</span> 参数（如 <code>stream</code>、<code>partial_images</code>、<code>quality: "auto"</code> 等）已被剔除。
+      若你使用的是 OpenAI 官方接口或其他标准兼容接口，可直接按此文档对接。
+    </div>
+
+    <!-- 概览 -->
+    <section id="overview" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">接口概览</h2>
+      <div class="grid gap-3">
+        <div class="flex items-start gap-4 p-4 rounded-lg border border-slate-200">
+          <span class="method-badge method-post mt-0.5 shrink-0">POST</span>
+          <div>
+            <div class="text-sm font-medium text-slate-900">/images/generations</div>
+            <div class="text-xs text-slate-500 mt-0.5">根据文本提示生成图片（文生图）</div>
+          </div>
+        </div>
+        <div class="flex items-start gap-4 p-4 rounded-lg border border-slate-200">
+          <span class="method-badge method-post mt-0.5 shrink-0">POST</span>
+          <div>
+            <div class="text-sm font-medium text-slate-900">/images/edits</div>
+            <div class="text-xs text-slate-500 mt-0.5">基于参考图进行编辑或局部重绘（图生图）</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 认证 -->
+    <section id="auth" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">认证方式</h2>
+      <p class="text-sm text-slate-600 mb-3">所有接口需在 HTTP Header 中携带 <code>Authorization</code> 进行 Bearer Token 认证。</p>
+      <div class="code-block">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre>Authorization: Bearer &lt;YOUR_API_KEY&gt;</pre>
+      </div>
+    </section>
+
+    <!-- 文生图 -->
+    <section id="generate" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-1">文生图</h2>
+      <p class="text-sm text-slate-500 mb-4">根据文本提示生成一张或多张图片。</p>
+
+      <div class="flex items-center gap-2 mb-4">
+        <span class="method-badge method-post">POST</span>
+        <code class="text-sm text-slate-700 bg-slate-100 px-2 py-0.5 rounded">/images/generations</code>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">请求参数</h3>
+      <div class="overflow-x-auto rounded-lg border border-slate-200 mb-5">
+        <table class="param-table w-full">
+          <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>官方取值</th><th>说明</th></thead>
+          <tbody>
+            <tr>
+              <td><code>model</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="required">是</span></td>
+              <td><code>gpt-image-2</code>, <code>gpt-image-1</code>, <code>dall-e-3</code>, <code>dall-e-2</code></td>
+              <td>模型 ID</td>
+            </tr>
+            <tr>
+              <td><code>prompt</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="required">是</span></td>
+              <td>自然语言文本</td>
+              <td>图片描述提示词。gpt-image-2 最长 32000 字符</td>
+            </tr>
+            <tr>
+              <td><code>n</code></td>
+              <td><span class="type-tag">integer</span></td>
+              <td><span class="optional">否</span></td>
+              <td>1 ~ 10（dall-e-2）; 1（dall-e-3）; 1 ~ 4（gpt-image-2 建议值）</td>
+              <td>生成数量。默认 <code>1</code></td>
+            </tr>
+            <tr>
+              <td><code>size</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td>
+                <div class="space-y-1">
+                  <div><span class="model-tag">gpt-image-2</span> 任意满足约束的分辨率 <span class="text-xs text-slate-500">（见下方尺寸约束）</span></div>
+                  <div><span class="model-tag">gpt-image-1</span> <code>1024x1024</code>, <code>1024x1536</code>, <code>1536x1024</code>, <code>auto</code></div>
+                  <div><span class="model-tag">dall-e-3</span> <code>1024x1024</code>, <code>1792x1024</code>, <code>1024x1792</code></div>
+                  <div><span class="model-tag">dall-e-2</span> <code>256x256</code>, <code>512x512</code>, <code>1024x1024</code></div>
+                </div>
+              </td>
+              <td>输出尺寸。默认因模型而异</td>
+            </tr>
+            <tr>
+              <td><code>quality</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td>
+                <div class="space-y-1">
+                  <div><span class="model-tag">gpt-image-2</span> <code>low</code>, <code>medium</code>, <code>high</code></div>
+                  <div><span class="model-tag">dall-e-3</span> <code>standard</code>, <code>hd</code></div>
+                </div>
+              </td>
+              <td>图片质量。默认因模型而异</td>
+            </tr>
+            <tr>
+              <td><code>output_format</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>png</code>, <code>jpeg</code>, <code>webp</code> <span class="model-tag">gpt-image-1/2</span></td>
+              <td>输出格式。默认 <code>png</code></td>
+            </tr>
+            <tr>
+              <td><code>output_compression</code></td>
+              <td><span class="type-tag">integer</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>0</code> ~ <code>100</code> <span class="model-tag">gpt-image-1/2</span></td>
+              <td>压缩率。仅对 <code>jpeg</code> / <code>webp</code> 有效</td>
+            </tr>
+            <tr>
+              <td><code>moderation</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>auto</code>, <code>low</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>内容审核严格程度。默认 <code>auto</code></td>
+            </tr>
+            <tr>
+              <td><code>background</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>transparent</code>, <code>opaque</code>, <code>auto</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>背景模式。默认 <code>auto</code></td>
+            </tr>
+            <tr>
+              <td><code>response_format</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>url</code>, <code>b64_json</code></td>
+              <td>返回格式。默认 <code>url</code></td>
+            </tr>
+            <tr>
+              <td><code>user</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td>任意字符串</td>
+              <td>终端用户唯一标识，用于滥用检测</td>
+            </tr>
+            <tr>
+              <td><code>style</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>vivid</code>, <code>natural</code> <span class="model-tag">dall-e-3 only</code></span></td>
+              <td>图像风格。默认 <code>vivid</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-box mb-4">
+        <strong>gpt-image-2 尺寸约束</strong>（官方）：最大边 &lt; 3840px；两边均为 16 的倍数；长宽比 ≤ 3:1；总像素在 655,360 ~ 8,294,400 之间。超过 2560×1440 视为实验性分辨率。
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">请求示例</h3>
+      <div class="code-block mb-4">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre>curl -s https://www.ai-link.shop/v1/images/generations \
+  -H <span class="json-string">"Authorization: Bearer &lt;YOUR_API_KEY&gt;"</span> \
+  -H <span class="json-string">"Content-Type: application/json"</span> \
+  -d <span class="json-string">'{
+    "model": "gpt-image-2",
+    "prompt": "一只在月光下看书的橘猫，卡通风格",
+    "size": "1024x1536",
+    "quality": "high",
+    "output_format": "png",
+    "moderation": "auto",
+    "response_format": "b64_json",
+    "n": 1
+  }'</span></pre>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">响应示例</h3>
+      <div class="code-block">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre>{<span class="json-key">"created"</span>: <span class="json-number">1718888888</span>,
+  <span class="json-key">"data"</span>: [
+    {
+      <span class="json-key">"b64_json"</span>: <span class="json-string">"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=="</span>,
+      <span class="json-key">"url"</span>: <span class="json-null">null</span>,
+      <span class="json-key">"revised_prompt"</span>: <span class="json-string">"A cartoon-style orange cat reading a book under moonlight"</span>,
+      <span class="json-key">"size"</span>: <span class="json-string">"1024x1536"</span>,
+      <span class="json-key">"quality"</span>: <span class="json-string">"high"</span>,
+      <span class="json-key">"output_format"</span>: <span class="json-string">"png"</span>
+    }
+  ]
+}</pre>
+      </div>
+    </section>
+
+    <!-- 图编辑 -->
+    <section id="edit" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-1">图生图 / 编辑</h2>
+      <p class="text-sm text-slate-500 mb-4">基于参考图片进行编辑或局部重绘。支持上传参考图和遮罩图。</p>
+
+      <div class="flex items-center gap-2 mb-4">
+        <span class="method-badge method-post">POST</span>
+        <code class="text-sm text-slate-700 bg-slate-100 px-2 py-0.5 rounded">/images/edits</code>
+      </div>
+
+      <div class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 mb-5">
+        <div class="flex items-start gap-2">
+          <svg class="w-4 h-4 text-amber-600 mt-0.5 shrink-0" fill="currentColor" viewBox="0 0 20 20"><path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd"/></svg>
+          <div class="text-xs text-amber-800 leading-relaxed">
+            此接口使用 <code>multipart/form-data</code> 格式提交。输入图片大小必须小于 50MB，格式为 PNG 或 JPG。
+          </div>
+        </div>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">请求参数</h3>
+      <div class="overflow-x-auto rounded-lg border border-slate-200 mb-5">
+        <table class="param-table w-full">
+          <thead><tr><th>参数</th><th>类型</th><th>必填</th><th>官方取值</th><th>说明</th></thead>
+          <tbody>
+            <tr>
+              <td><code>image</code></td>
+              <td><span class="type-tag">file</span></td>
+              <td><span class="required">是</span></td>
+              <td>PNG / JPG，&lt; 50MB</td>
+              <td>待编辑的参考图片。gpt-image-2 支持 PNG/JPG</td>
+            </tr>
+            <tr>
+              <td><code>mask</code></td>
+              <td><span class="type-tag">file</span></td>
+              <td><span class="optional">否</span></td>
+              <td>PNG，与参考图同尺寸</td>
+              <td>遮罩图片。透明/白色区域表示需编辑区域，黑色表示保留</td>
+            </tr>
+            <tr>
+              <td><code>model</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="required">是</span></td>
+              <td><code>gpt-image-2</code>, <code>gpt-image-1</code>, <code>dall-e-2</code></td>
+              <td>模型 ID</td>
+            </tr>
+            <tr>
+              <td><code>prompt</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="required">是</span></td>
+              <td>自然语言文本</td>
+              <td>编辑指令提示词</td>
+            </tr>
+            <tr>
+              <td><code>n</code></td>
+              <td><span class="type-tag">integer</span></td>
+              <td><span class="optional">否</span></td>
+              <td>1 ~ 10</td>
+              <td>生成数量。默认 <code>1</code></td>
+            </tr>
+            <tr>
+              <td><code>size</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td>同文生图尺寸取值</td>
+              <td>输出尺寸</td>
+            </tr>
+            <tr>
+              <td><code>quality</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>low</code>, <code>medium</code>, <code>high</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>图片质量</td>
+            </tr>
+            <tr>
+              <td><code>output_format</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>png</code>, <code>jpeg</code>, <code>webp</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>输出格式。默认 <code>png</code></td>
+            </tr>
+            <tr>
+              <td><code>output_compression</code></td>
+              <td><span class="type-tag">integer</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>0</code> ~ <code>100</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>压缩率。仅 jpeg/webp 有效</td>
+            </tr>
+            <tr>
+              <td><code>moderation</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>auto</code>, <code>low</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>内容审核级别。默认 <code>auto</code></td>
+            </tr>
+            <tr>
+              <td><code>background</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>transparent</code>, <code>opaque</code>, <code>auto</code> <span class="model-tag">gpt-image-1/2</code></span></td>
+              <td>背景模式。默认 <code>auto</code></td>
+            </tr>
+            <tr>
+              <td><code>response_format</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td><code>url</code>, <code>b64_json</code></td>
+              <td>返回格式。默认 <code>url</code></td>
+            </tr>
+            <tr>
+              <td><code>user</code></td>
+              <td><span class="type-tag">string</span></td>
+              <td><span class="optional">否</span></td>
+              <td>任意字符串</td>
+              <td>终端用户标识</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">请求示例（curl）</h3>
+      <div class="code-block mb-4">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre>curl -s https://www.ai-link.shop/v1/images/edits \
+  -H <span class="json-string">"Authorization: Bearer &lt;YOUR_API_KEY&gt;"</span> \
+  -F <span class="json-string">"model=gpt-image-2"</span> \
+  -F <span class="json-string">"prompt=把背景换成星空"</span> \
+  -F <span class="json-string">"size=1024x1024"</span> \
+  -F <span class="json-string">"output_format=png"</span> \
+  -F <span class="json-string">"image=@cat.png"</span> \
+  -F <span class="json-string">"mask=@mask.png"</span></pre>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">Python 请求示例</h3>
+      <div class="code-block">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre><span class="json-bool">import</span> requests
+
+url = <span class="json-string">"https://www.ai-link.shop/v1/images/edits"</span>
+headers = {<span class="json-key">"Authorization"</span>: <span class="json-string">"Bearer &lt;YOUR_API_KEY&gt;"</span>}
+data = {
+    <span class="json-key">"model"</span>: <span class="json-string">"gpt-image-2"</span>,
+    <span class="json-key">"prompt"</span>: <span class="json-string">"把背景换成星空"</span>,
+    <span class="json-key">"size"</span>: <span class="json-string">"1024x1024"</span>,
+}
+files = [
+    (<span class="json-string">"image"</span>, (<span class="json-string">"cat.png"</span>, <span class="json-bool">open</span>(<span class="json-string">"cat.png"</span>, <span class="json-string">"rb"</span>), <span class="json-string">"image/png"</span>)),
+    (<span class="json-string">"mask"</span>, (<span class="json-string">"mask.png"</span>, <span class="json-bool">open</span>(<span class="json-string">"mask.png"</span>, <span class="json-string">"rb"</span>), <span class="json-string">"image/png"</span>)),
+]
+
+resp = requests.post(url, headers=headers, data=data, files=files)
+<span class="json-bool">print</span>(resp.json())</pre>
+      </div>
+    </section>
+
+    <!-- 响应说明 -->
+    <section id="response" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">响应说明</h2>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">成功响应（HTTP 200）</h3>
+      <div class="overflow-x-auto rounded-lg border border-slate-200 mb-5">
+        <table class="param-table w-full">
+          <thead><tr><th>字段</th><th>类型</th><th>说明</th></thead>
+          <tbody>
+            <tr><td><code>created</code></td><td><span class="type-tag">integer</span></td><td>Unix 时间戳（秒）</td></tr>
+            <tr><td><code>data</code></td><td><span class="type-tag">array</span></td><td>图片结果数组，长度等于请求参数 <code>n</code></td></tr>
+            <tr><td><code>data[].b64_json</code></td><td><span class="type-tag">string</span></td><td>图片的 Base64 编码数据（与 <code>url</code> 二选一返回）</td></tr>
+            <tr><td><code>data[].url</code></td><td><span class="type-tag">string</span></td><td>图片的临时 HTTP URL（与 <code>b64_json</code> 二选一返回），会过期</td></tr>
+            <tr><td><code>data[].size</code></td><td><span class="type-tag">string</span></td><td>实际生效的图片尺寸</td></tr>
+            <tr><td><code>data[].quality</code></td><td><span class="type-tag">string</span></td><td>实际生效的图片质量</td></tr>
+            <tr><td><code>data[].output_format</code></td><td><span class="type-tag">string</span></td><td>实际生效的输出格式</td></tr>
+            <tr><td><code>data[].output_compression</code></td><td><span class="type-tag">number</span></td><td>实际生效的压缩率</td></tr>
+            <tr><td><code>data[].moderation</code></td><td><span class="type-tag">string</span></td><td>实际生效的内容审核级别</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-box mb-4">
+        <strong>关于返回格式</strong>：默认返回 <code>url</code>（临时链接，会过期），建议生产环境立即下载转存；若指定 <code>response_format: "b64_json"</code>，则直接返回 Base64 编码数据。
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">尺寸参数对照表（gpt-image-2）</h3>
+      <div class="overflow-x-auto rounded-lg border border-slate-200">
+        <table class="param-table w-full">
+          <thead><tr><th>常用尺寸</th><th>比例</th><th>适用场景</th></thead>
+          <tbody>
+            <tr><td><code>1024x1024</code></td><td>1:1 正方形</td><td>头像、Icon、社交媒体</td></tr>
+            <tr><td><code>1024x1536</code></td><td>2:3 竖屏</td><td>手机壁纸、海报、人物肖像</td></tr>
+            <tr><td><code>1536x1024</code></td><td>3:2 横屏</td><td>电脑壁纸、横幅、风景</td></tr>
+            <tr><td><code>2560x1440</code></td><td>16:9 宽屏</td><td>2K 显示器、视频封面（可靠性上限）</td></tr>
+            <tr><td><code>3840x2160</code></td><td>16:9 超高清</td><td>4K 壁纸（实验性，结果可能不稳定）</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <!-- 错误处理 -->
+    <section id="error" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">错误码</h2>
+      <p class="text-sm text-slate-600 mb-3">接口遵循标准 HTTP 状态码规范，失败时返回对应的状态码和错误详情。</p>
+
+      <div class="overflow-x-auto rounded-lg border border-slate-200 mb-5">
+        <table class="param-table w-full">
+          <thead><tr><th>状态码</th><th>含义</th><th>常见原因</th></thead>
+          <tbody>
+            <tr><td><code>200</code></td><td>成功</td><td>请求正常处理，返回图片数据</td></tr>
+            <tr><td><code>400</code></td><td>请求参数错误</td><td>缺少必填参数、参数格式不合法、prompt 为空</td></tr>
+            <tr><td><code>401</code></td><td>未授权</td><td>API Key 无效、缺失或已过期</td></tr>
+            <tr><td><code>403</code></td><td>内容策略拦截</td><td>提示词触发安全过滤、生成内容被拦截</td></tr>
+            <tr><td><code>429</code></td><td>请求过于频繁</td><td>超出速率限制，需降低请求频率</td></tr>
+            <tr><td><code>500</code></td><td>服务器内部错误</td><td>模型服务端异常，建议稍后重试</td></tr>
+            <tr><td><code>504</code></td><td>网关超时</td><td>生成耗时过长（高质量请求可达 15~30 秒），建议增加超时时间或异步处理</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3 class="text-sm font-semibold text-slate-900 mb-2">错误响应格式</h3>
+      <div class="code-block">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre>HTTP/1.1 <span class="json-number">401</span> Unauthorized
+Content-Type: application/json
+
+{
+  <span class="json-key">"error"</span>: {
+    <span class="json-key">"message"</span>: <span class="json-string">"Invalid authentication credentials"</span>,
+    <span class="json-key">"type"</span>: <span class="json-string">"authentication_error"</span>,
+    <span class="json-key">"code"</span>: <span class="json-string">"invalid_api_key"</span>
+  }
+}</pre>
+      </div>
+    </section>
+
+    <!-- SDK 示例 -->
+    <section id="sdk" class="section-anchor mb-12">
+      <h2 class="text-xl font-bold text-slate-900 mb-4">完整 SDK 示例（Python）</h2>
+      <p class="text-sm text-slate-600 mb-3">以下脚本封装了文生图和图编辑的完整调用流程，可直接保存运行。</p>
+
+      <div class="code-block">
+        <button class="copy-btn" onclick="copy(this)">复制</button>
+        <pre><span class="json-bool">import</span> argparse
+<span class="json-bool">import</span> base64
+<span class="json-bool">import</span> json
+<span class="json-bool">import</span> sys
+<span class="json-bool">from</span> pathlib <span class="json-bool">import</span> Path
+<span class="json-bool">from</span> typing <span class="json-bool">import</span> List, Optional
+
+<span class="json-bool">try</span>:
+    <span class="json-bool">import</span> requests
+<span class="json-bool">except</span> ImportError:
+    <span class="json-bool">print</span>(<span class="json-string">"请先安装 requests: pip install requests"</span>)
+    sys.exit(<span class="json-number">1</span>)
+
+BASE_URL = <span class="json-string">"https://www.ai-link.shop/v1"</span>
+DEFAULT_MODEL = <span class="json-string">"gpt-image-2"</span>
+
+<span class="json-bool">def</span> <span class="json-key">generate</span>(api_key: str, model: str, prompt: str, **kwargs) -> dict:
+    <span class="json-key">url</span> = <span class="json-string">f"{BASE_URL}/images/generations"</span>
+    <span class="json-key">payload</span> = {
+        <span class="json-key">"model"</span>: model,
+        <span class="json-key">"prompt"</span>: prompt,
+        <span class="json-key">"size"</span>: kwargs.get(<span class="json-string">"size"</span>, <span class="json-string">"1024x1536"</span>),
+        <span class="json-key">"quality"</span>: kwargs.get(<span class="json-string">"quality"</span>, <span class="json-string">"high"</span>),
+        <span class="json-key">"output_format"</span>: kwargs.get(<span class="json-string">"format"</span>, <span class="json-string">"png"</span>),
+        <span class="json-key">"moderation"</span>: kwargs.get(<span class="json-string">"moderation"</span>, <span class="json-string">"auto"</span>),
+        <span class="json-key">"response_format"</span>: <span class="json-string">"b64_json"</span>,
+        <span class="json-key">"n"</span>: kwargs.get(<span class="json-string">"n"</span>, <span class="json-number">1</span>),
+    }
+    <span class="json-bool">if</span> kwargs.get(<span class="json-string">"compression"</span>) <span class="json-bool">is not</span> <span class="json-null">None</span>:
+        payload[<span class="json-string">"output_compression"</span>] = kwargs[<span class="json-string">"compression"</span>]
+    <span class="json-key">resp</span> = requests.post(
+        url, headers={<span class="json-key">"Authorization"</span>: <span class="json-string">f"Bearer {api_key}"</span>},
+        json=payload, timeout=<span class="json-number">300</span>
+    )
+    resp.raise_for_status()
+    <span class="json-bool">return</span> resp.json()
+
+<span class="json-bool">def</span> <span class="json-key">edit</span>(api_key: str, model: str, prompt: str,
+         image_paths: List[str], mask_path: Optional[str] = <span class="json-null">None</span>, **kwargs) -> dict:
+    <span class="json-key">url</span> = <span class="json-string">f"{BASE_URL}/images/edits"</span>
+    <span class="json-key">data</span> = {
+        <span class="json-key">"model"</span>: model,
+        <span class="json-key">"prompt"</span>: prompt,
+        <span class="json-key">"size"</span>: kwargs.get(<span class="json-string">"size"</span>, <span class="json-string">"1024x1024"</span>),
+        <span class="json-key">"output_format"</span>: kwargs.get(<span class="json-string">"format"</span>, <span class="json-string">"png"</span>),
+    }
+    <span class="json-key">files</span> = []
+    <span class="json-key">handles</span> = []
+    <span class="json-bool">try</span>:
+        <span class="json-bool">for</span> p <span class="json-bool">in</span> image_paths:
+            <span class="json-key">path</span> = Path(p)
+            <span class="json-key">f</span> = <span class="json-bool">open</span>(path, <span class="json-string">"rb"</span>)
+            handles.append(f)
+            <span class="json-key">mime</span> = <span class="json-string">f"image/{path.suffix.lstrip('.')}"</span> <span class="json-bool">if</span> path.suffix <span class="json-bool">else</span> <span class="json-string">"image/png"</span>
+            files.append((<span class="json-string">"image"</span>, (path.name, f, mime)))
+        <span class="json-bool">if</span> mask_path:
+            <span class="json-key">f</span> = <span class="json-bool">open</span>(mask_path, <span class="json-string">"rb"</span>)
+            handles.append(f)
+            files.append((<span class="json-string">"mask"</span>, (<span class="json-string">"mask.png"</span>, f, <span class="json-string">"image/png"</span>)))
+        <span class="json-key">resp</span> = requests.post(
+            url, headers={<span class="json-key">"Authorization"</span>: <span class="json-string">f"Bearer {api_key}"</span>},
+            data=data, files=files, timeout=<span class="json-number">300</span>
+        )
+        resp.raise_for_status()
+        <span class="json-bool">return</span> resp.json()
+    <span class="json-bool">finally</span>:
+        <span class="json-bool">for</span> f <span class="json-bool">in</span> handles: f.close()
+
+<span class="json-bool">def</span> <span class="json-key">save_images</span>(response: dict, prefix: str = <span class="json-string">"output"</span>) -> List[str]:
+    <span class="json-key">saved</span> = []
+    <span class="json-bool">for</span> i, item <span class="json-bool">in</span> <span class="json-bool">enumerate</span>(response.get(<span class="json-string">"data"</span>, [])):
+        <span class="json-key">b64</span> = item.get(<span class="json-string">"b64_json"</span>)
+        <span class="json-key">url</span> = item.get(<span class="json-string">"url"</span>)
+        <span class="json-bool">if</span> b64:
+            <span class="json-key">img_data</span> = base64.b64decode(b64)
+        <span class="json-bool">elif</span> url:
+            <span class="json-key">img_data</span> = requests.get(url, timeout=<span class="json-number">60</span>).content
+        <span class="json-bool">else</span>:
+            <span class="json-bool">continue</span>
+        <span class="json-key">ext</span> = item.get(<span class="json-string">"output_format"</span>, <span class="json-string">"png"</span>)
+        <span class="json-key">path</span> = <span class="json-string">f"{prefix}_{i+1}.{ext}"</span>
+        Path(path).write_bytes(img_data)
+        saved.append(path)
+        <span class="json-bool">print</span>(<span class="json-string">f"已保存: {path}"</span>)
+    <span class="json-bool">return</span> saved
+
+<span class="json-bool">if</span> __name__ == <span class="json-string">"__main__"</span>:
+    <span class="json-key">parser</span> = argparse.ArgumentParser()
+    parser.add_argument(<span class="json-string">"--key"</span>, required=<span class="json-bool">True</span>)
+    parser.add_argument(<span class="json-string">"--model"</span>, default=DEFAULT_MODEL)
+    parser.add_argument(<span class="json-string">"--prompt"</span>, required=<span class="json-bool">True</span>)
+    parser.add_argument(<span class="json-string">"--mode"</span>, choices=[<span class="json-string">"generate"</span>, <span class="json-string">"edit"</span>], default=<span class="json-string">"generate"</span>)
+    parser.add_argument(<span class="json-string">"--image"</span>, nargs=<span class="json-string">"+"</span>)
+    parser.add_argument(<span class="json-string">"--mask"</span>)
+    parser.add_argument(<span class="json-string">"--size"</span>, default=<span class="json-string">"1024x1536"</span>)
+    parser.add_argument(<span class="json-string">"--quality"</span>, default=<span class="json-string">"high"</span>)
+    parser.add_argument(<span class="json-string">"--format"</span>, default=<span class="json-string">"png"</span>)
+    parser.add_argument(<span class="json-string">"--compression"</span>, type=<span class="json-bool">int</span>)
+    parser.add_argument(<span class="json-string">"--n"</span>, type=<span class="json-bool">int</span>, default=<span class="json-number">1</span>)
+    parser.add_argument(<span class="json-string">"--out"</span>, default=<span class="json-string">"output"</span>)
+    <span class="json-key">args</span> = parser.parse_args()
+    <span class="json-key">kwargs</span> = {<span class="json-string">"size"</span>: args.size, <span class="json-string">"quality"</span>: args.quality,
+                <span class="json-string">"format"</span>: args.format, <span class="json-string">"compression"</span>: args.compression, <span class="json-string">"n"</span>: args.n}
+    <span class="json-bool">if</span> args.mode == <span class="json-string">"generate"</span>:
+        <span class="json-key">resp</span> = generate(args.key, args.model, args.prompt, **kwargs)
+    <span class="json-bool">else</span>:
+        <span class="json-bool">if</span> <span class="json-bool">not</span> args.image: parser.error(<span class="json-string">"edit 模式需要 --image"</span>)
+        <span class="json-key">resp</span> = edit(args.key, args.model, args.prompt, args.image, args.mask, **kwargs)
+    <span class="json-bool">print</span>(json.dumps(resp, indent=<span class="json-number">2</span>, ensure_ascii=<span class="json-bool">False</span>))
+    save_images(resp, prefix=args.out)</pre>
+      </div>
+    </section>
+
+    <footer class="pt-6 border-t border-slate-200 text-xs text-slate-400">
+      文档基于 OpenAI Images API 官方规范编写。接口通过 AI-Link.shop 中转提供服务。
+    </footer>
+
+  </div>
+</main>
+
+<script>
+function copy(btn) {
+  const pre = btn.parentElement.querySelector('pre');
+  const text = pre.innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = '已复制';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = '复制'; btn.classList.remove('copied'); }, 1500);
+  });
+}
+const sections = document.querySelectorAll('.section-anchor');
+const navLinks = document.querySelectorAll('.nav-link');
+function onScroll() {
+  let current = '';
+  sections.forEach(sec => { if (window.scrollY >= sec.offsetTop - 100) current = sec.id; });
+  navLinks.forEach(link => { link.classList.toggle('active', link.getAttribute('href') === '#' + current); });
+}
+window.addEventListener('scroll', onScroll);
+onScroll();
+</script>
+
+</body>
+</html>
