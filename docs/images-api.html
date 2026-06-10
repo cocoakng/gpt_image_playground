@@ -54,7 +54,7 @@
 <nav class="toc-fixed py-6 px-4">
   <div class="mb-6 px-2">
     <div class="text-sm font-bold text-slate-900">AI-Link.shop</div>
-    <div class="text-xs text-slate-500 mt-0.5">生图 API 文档（官方参数版）</div>
+    <div class="text-xs text-slate-500 mt-0.5">生图 API 文档（兼容官方参数）</div>
   </div>
   <div class="space-y-0.5">
     <a href="#overview" class="nav-link active">接口概览</a>
@@ -99,14 +99,14 @@
           <span class="method-badge method-post mt-0.5 shrink-0">POST</span>
           <div>
             <div class="text-sm font-medium text-slate-900">/images/generations</div>
-            <div class="text-xs text-slate-500 mt-0.5">根据文本提示生成图片（文生图）</div>
+            <div class="text-xs text-slate-500 mt-0.5">根据文本提示生成图片（文生图），每次请求仅返回一张</div>
           </div>
         </div>
         <div class="flex items-start gap-4 p-4 rounded-lg border border-slate-200">
           <span class="method-badge method-post mt-0.5 shrink-0">POST</span>
           <div>
             <div class="text-sm font-medium text-slate-900">/images/edits</div>
-            <div class="text-xs text-slate-500 mt-0.5">基于参考图进行编辑或局部重绘（图生图）</div>
+            <div class="text-xs text-slate-500 mt-0.5">基于参考图进行编辑或局部重绘（图生图），每次请求仅返回一张</div>
           </div>
         </div>
       </div>
@@ -125,7 +125,11 @@
     <!-- 文生图 -->
     <section id="generate" class="section-anchor mb-12">
       <h2 class="text-xl font-bold text-slate-900 mb-1">文生图</h2>
-      <p class="text-sm text-slate-500 mb-4">根据文本提示生成一张或多张图片。</p>
+      <p class="text-sm text-slate-500 mb-4">根据文本提示生成一张图片。</p>
+
+      <div class="warn-box mb-5">
+        <strong>单次单图：</strong>每次请求仅生成并返回一张图片。如需多张，请发起多次独立请求。
+      </div>
 
       <div class="flex items-center gap-2 mb-4">
         <span class="method-badge method-post">POST</span>
@@ -150,13 +154,6 @@
               <td><span class="required">是</span></td>
               <td>自然语言文本</td>
               <td>图片描述提示词。gpt-image-2 最长 32000 字符</td>
-            </tr>
-            <tr>
-              <td><code>n</code></td>
-              <td><span class="type-tag">integer</span></td>
-              <td><span class="optional">否</span></td>
-              <td>1 ~ 10（dall-e-2）; 1（dall-e-3）; 1 ~ 4（gpt-image-2 建议值）</td>
-              <td>生成数量。默认 <code>1</code></td>
             </tr>
             <tr>
               <td><code>size</code></td>
@@ -254,8 +251,7 @@
     "quality": "high",
     "output_format": "png",
     "moderation": "auto",
-    "response_format": "b64_json",
-    "n": 1
+    "response_format": "b64_json"
   }'</span></pre>
       </div>
 
@@ -296,6 +292,10 @@
         </div>
       </div>
 
+      <div class="warn-box mb-5">
+        <strong>单次单图：</strong>每次请求仅生成并返回一张图片。如需多张，请发起多次独立请求。
+      </div>
+
       <h3 class="text-sm font-semibold text-slate-900 mb-2">请求参数</h3>
       <div class="overflow-x-auto rounded-lg border border-slate-200 mb-5">
         <table class="param-table w-full">
@@ -328,13 +328,6 @@
               <td><span class="required">是</span></td>
               <td>自然语言文本</td>
               <td>编辑指令提示词</td>
-            </tr>
-            <tr>
-              <td><code>n</code></td>
-              <td><span class="type-tag">integer</span></td>
-              <td><span class="optional">否</span></td>
-              <td>1 ~ 10</td>
-              <td>生成数量。默认 <code>1</code></td>
             </tr>
             <tr>
               <td><code>size</code></td>
@@ -441,7 +434,7 @@ resp = requests.post(url, headers=headers, data=data, files=files)
           <thead><tr><th>字段</th><th>类型</th><th>说明</th></thead>
           <tbody>
             <tr><td><code>created</code></td><td><span class="type-tag">integer</span></td><td>Unix 时间戳（秒）</td></tr>
-            <tr><td><code>data</code></td><td><span class="type-tag">array</span></td><td>图片结果数组，长度等于请求参数 <code>n</code></td></tr>
+            <tr><td><code>data</code></td><td><span class="type-tag">array</span></td><td>图片结果数组</td></tr>
             <tr><td><code>data[].b64_json</code></td><td><span class="type-tag">string</span></td><td>图片的 Base64 编码数据（与 <code>url</code> 二选一返回）</td></tr>
             <tr><td><code>data[].url</code></td><td><span class="type-tag">string</span></td><td>图片的临时 HTTP URL（与 <code>b64_json</code> 二选一返回），会过期</td></tr>
             <tr><td><code>data[].size</code></td><td><span class="type-tag">string</span></td><td>实际生效的图片尺寸</td></tr>
@@ -541,7 +534,6 @@ DEFAULT_MODEL = <span class="json-string">"gpt-image-2"</span>
         <span class="json-key">"output_format"</span>: kwargs.get(<span class="json-string">"format"</span>, <span class="json-string">"png"</span>),
         <span class="json-key">"moderation"</span>: kwargs.get(<span class="json-string">"moderation"</span>, <span class="json-string">"auto"</span>),
         <span class="json-key">"response_format"</span>: <span class="json-string">"b64_json"</span>,
-        <span class="json-key">"n"</span>: kwargs.get(<span class="json-string">"n"</span>, <span class="json-number">1</span>),
     }
     <span class="json-bool">if</span> kwargs.get(<span class="json-string">"compression"</span>) <span class="json-bool">is not</span> <span class="json-null">None</span>:
         payload[<span class="json-string">"output_compression"</span>] = kwargs[<span class="json-string">"compression"</span>]
@@ -613,11 +605,10 @@ DEFAULT_MODEL = <span class="json-string">"gpt-image-2"</span>
     parser.add_argument(<span class="json-string">"--quality"</span>, default=<span class="json-string">"high"</span>)
     parser.add_argument(<span class="json-string">"--format"</span>, default=<span class="json-string">"png"</span>)
     parser.add_argument(<span class="json-string">"--compression"</span>, type=<span class="json-bool">int</span>)
-    parser.add_argument(<span class="json-string">"--n"</span>, type=<span class="json-bool">int</span>, default=<span class="json-number">1</span>)
     parser.add_argument(<span class="json-string">"--out"</span>, default=<span class="json-string">"output"</span>)
     <span class="json-key">args</span> = parser.parse_args()
     <span class="json-key">kwargs</span> = {<span class="json-string">"size"</span>: args.size, <span class="json-string">"quality"</span>: args.quality,
-                <span class="json-string">"format"</span>: args.format, <span class="json-string">"compression"</span>: args.compression, <span class="json-string">"n"</span>: args.n}
+                <span class="json-string">"format"</span>: args.format, <span class="json-string">"compression"</span>: args.compression}
     <span class="json-bool">if</span> args.mode == <span class="json-string">"generate"</span>:
         <span class="json-key">resp</span> = generate(args.key, args.model, args.prompt, **kwargs)
     <span class="json-bool">else</span>:
