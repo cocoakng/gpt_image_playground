@@ -7,6 +7,7 @@ const DEFAULT_MODEL = 'doubao-seedance-2-0-fast-260128'
 /** 各模型支持的配置项 */
 const VIDEO_MODEL_CAPS: Record<string, {
   label: string
+  available?: boolean  // 模型是否可用，默认 true
   resolution?: string[]
   duration?: { min: number; max: number; step?: number; options?: number[] }
   ratio?: string[]
@@ -18,7 +19,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   imageMode?: boolean
   maxImages?: number
   modes?: VideoMode[]
-  frameMode?: 'start-end' | 'reference'  // 首尾帧语义：start-end=1张首帧2张首尾, reference=都是参考图不标记
+  frameMode?: 'start-end' | 'reference'
 }> = {
   'kling-v3': {
     label: 'kling-v3',
@@ -58,6 +59,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'doubao-seedance-2-0-260128': {
     label: 'doubao-seedance-2-0-260128',
+    available: false,
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -69,6 +71,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'doubao-seedance-2-0-fast-260128': {
     label: 'doubao-seedance-2-0-fast-260128',
+    available: false,
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -80,6 +83,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'happyhorse-1.0': {
     label: 'happyhorse-1.0',
+    available: false,
     duration: { min: 5, max: 15 },
     ratio: ['16:9', '9:16', '4:3', '3:4', '1:1'],
     audio: false,
@@ -95,6 +99,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
 export const MODEL_OPTIONS = Object.entries(VIDEO_MODEL_CAPS).map(([value, caps]) => ({
   label: caps.label,
   value,
+  available: caps.available ?? true,
 }))
 
 /** 获取模型能力 */
@@ -184,18 +189,29 @@ export default function VideoParamsSelector({ params, onChange, disabled, hideMo
     <div className="flex items-center gap-2 flex-wrap">
       {/* 模型选择器 */}
       {!hideModel && (
-        <div className="relative">
-          <select
-            value={params.model || DEFAULT_MODEL}
-            onChange={(e) => handleModelChange(e.target.value)}
-            disabled={disabled}
-            className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
-          >
-            {MODEL_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>{opt.label}</option>
-            ))}
-          </select>
-          <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+        <div className="flex items-center gap-2">
+          <div className="relative">
+            <select
+              value={params.model || DEFAULT_MODEL}
+              onChange={(e) => handleModelChange(e.target.value)}
+              disabled={disabled}
+              className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {MODEL_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value} disabled={!opt.available}>
+                  {opt.label}{!opt.available ? ' (维护中)' : ''}
+                </option>
+              ))}
+            </select>
+            <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+          </div>
+          {/* 状态圆点 */}
+          <span
+            className={`inline-block h-2.5 w-2.5 rounded-full ${
+              currentModelCaps.available === false ? 'bg-red-400' : 'bg-green-400'
+            }`}
+            title={currentModelCaps.available === false ? '模型维护中' : '模型可用'}
+          />
         </div>
       )}
 

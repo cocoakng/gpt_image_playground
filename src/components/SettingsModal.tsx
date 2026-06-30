@@ -39,6 +39,7 @@ import Select from './Select'
 import { Checkbox } from './Checkbox'
 import ViewportTooltip from './ViewportTooltip'
 import { ChevronDownIcon, CloseIcon, CopyIcon, PlusIcon, TrashIcon, GithubIcon, ExportIcon, ImportIcon, DragHandleIcon, LinkIcon } from './icons'
+import { MODEL_OPTIONS as VIDEO_MODEL_OPTIONS } from './VideoParamsSelector'
 
 function newId(prefix: string) {
   return `${prefix}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
@@ -296,15 +297,6 @@ profiles 中不要包含 apiKey（用户导入后自行填写）。
 
 ## 统一任务接口示例
 {"customProviders":[{"id":"custom-example-task","name":"示例任务服务商","submit":{"path":"images/generations","method":"POST","contentType":"json","body":{"model":"$profile.model","prompt":"$prompt","n":"$params.n","size":"$params.size","resolution":"2k","quality":"$params.quality","image_urls":"$inputImages.dataUrls"},"taskIdPath":"data.0.task_id"},"poll":{"path":"tasks/{task_id}","method":"GET","query":{"language":"zh"},"intervalSeconds":5,"statusPath":"data.status","successValues":["completed"],"failureValues":["failed","cancelled"],"errorPath":"data.error.message","result":{"imageUrlPaths":["data.result.images.*.url.*"],"b64JsonPaths":[]}}}],"profiles":[{"name":"示例任务服务商","provider":"custom-example-task","baseUrl":"","model":"gpt-image-2","apiMode":"images"}]}`
-
-const VIDEO_MODEL_OPTIONS = [
-  { label: 'kling-v3', value: 'kling-v3' },
-  { label: 'viduq3', value: 'viduq3' },
-  { label: 'grok-video-3', value: 'grok-video-3' },
-  { label: 'doubao-seedance-2-0-260128', value: 'doubao-seedance-2-0-260128' },
-  { label: 'doubao-seedance-2-0-fast-260128', value: 'doubao-seedance-2-0-fast-260128' },
-  { label: 'happyhorse-1.0', value: 'happyhorse-1.0' },
-]
 
 function GalleryConfigTab() {
   const settings = useStore((s) => s.settings)
@@ -655,7 +647,9 @@ function VideoConfigTab() {
         <div className="rounded-xl border border-gray-200 dark:border-white/[0.08] bg-gray-50/50 dark:bg-white/[0.03] p-3 space-y-2">
           <div className="text-xs font-medium text-gray-500 dark:text-gray-400">已配置模型（{configuredModels.length}）</div>
           <div className="space-y-1.5">
-            {configuredModels.map((opt) => (
+            {configuredModels.map((opt) => {
+              const isAvailable = opt.available !== false
+              return (
               <div
                 key={opt.value}
                 className={`flex items-center justify-between rounded-lg px-2.5 py-2 text-sm transition ${
@@ -667,9 +661,11 @@ function VideoConfigTab() {
                 <button
                   type="button"
                   onClick={() => handleModelChange(opt.value)}
-                  className="flex-1 text-left text-gray-700 dark:text-gray-200"
+                  className="flex items-center gap-2 flex-1 text-left text-gray-700 dark:text-gray-200"
                 >
+                  <span className={`inline-block h-2 w-2 rounded-full flex-shrink-0 ${isAvailable ? 'bg-green-400' : 'bg-red-400'}`} />
                   {opt.label}
+                  {!isAvailable && <span className="text-xs text-red-500">（维护中）</span>}
                   {selectedVideoModel === opt.value && (
                     <span className="ml-2 text-xs text-blue-500 dark:text-blue-400">当前编辑</span>
                   )}
@@ -683,7 +679,7 @@ function VideoConfigTab() {
                   <TrashIcon className="w-3.5 h-3.5" />
                 </button>
               </div>
-            ))}
+              )})}
           </div>
         </div>
       )}

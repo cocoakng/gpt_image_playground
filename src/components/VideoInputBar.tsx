@@ -248,6 +248,13 @@ export default function VideoInputBar() {
       return
     }
 
+    // 检查模型是否可用
+    const caps = getModelCapsFor(selectedVideoModel)
+    if (caps.available === false) {
+      showToast('当前模型维护中，请更换其他模型', 'error')
+      return
+    }
+
     const apiKey = useStore.getState().videoApiKeys?.[selectedVideoModel] ?? ''
     if (!apiKey) {
       showToast('请先配置视频 API Key', 'error')
@@ -723,19 +730,30 @@ export default function VideoInputBar() {
 
         {/* Params row */}
         <div className="mt-2 flex items-center gap-2 flex-wrap">
-          {/* 模型选择 */}
-          <div className="relative">
-            <select
-              value={currentModel}
-              onChange={(e) => setSelectedVideoModel(e.target.value)}
-              disabled={submitting}
-              className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
-            >
-              {configuredModels.map((opt) => (
-                <option key={opt.value} value={opt.value}>{opt.label}</option>
-              ))}
-            </select>
-            <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+          {/* 模型选择 + 状态指示 */}
+          <div className="flex items-center gap-2">
+            <div className="relative">
+              <select
+                value={currentModel}
+                onChange={(e) => setSelectedVideoModel(e.target.value)}
+                disabled={submitting}
+                className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {configuredModels.map((opt) => (
+                  <option key={opt.value} value={opt.value} disabled={!opt.available}>
+                    {opt.label}{!opt.available ? ' (维护中)' : ''}
+                  </option>
+                ))}
+              </select>
+              <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+            </div>
+            {/* 状态圆点 */}
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                modelCaps.available === false ? 'bg-red-400' : 'bg-green-400'
+              }`}
+              title={modelCaps.available === false ? '模型维护中' : '模型可用'}
+            />
           </div>
 
           <VideoParamsSelector
