@@ -1,6 +1,6 @@
 import { useEffect, useState, useRef, type ReactNode } from 'react'
 import type { TaskRecord } from '../types'
-import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, retryTask, retryVideoTask } from '../store'
+import { useStore, ensureImageThumbnailCached, subscribeImageThumbnail, retryTask, retryVideoTask, ensureImageCached } from '../store'
 import { formatImageRatio } from '../lib/size'
 import { getParamDisplay, ActualValueBadge } from '../lib/paramDisplay'
 import { DEFAULT_IMAGES_MODEL, DEFAULT_FAL_MODEL } from '../lib/apiProfiles'
@@ -79,6 +79,10 @@ export default function TaskCard({
   const toggleTaskSelection = useStore((s) => s.toggleTaskSelection)
   const settings = useStore((s) => s.settings)
   const openFavoritePicker = useStore((s) => s.openFavoritePicker)
+  const showToast = useStore((s) => s.showToast)
+  const setAppMode = useStore((s) => s.setAppMode)
+  const addInputImage = useStore((s) => s.addInputImage)
+  const setMaskDraft = useStore((s) => s.setMaskDraft)
   const streamPreviewSrc = useStore((s) => s.streamPreviews[task.id] || '')
   const videoCoverPreview = useStore((s) => s.videoCoverPreviews[task.id] || '')
   const touchStartRef = useRef<{ x: number; y: number } | null>(null)
@@ -416,7 +420,7 @@ export default function TaskCard({
             </>
           )}
           {task.status === 'running' && (!streamPreviewSrc || !streamPreviewLoaded) && (
-            <div className="flex flex-col items-center gap-2">
+            <div className="flex flex-col items-center gap-2 px-3 w-full">
               {task.videoStatus ? (
                 <>
                   {getVideoStatusIcon(task.videoStatus) === 'clock' ? (
@@ -445,6 +449,19 @@ export default function TaskCard({
                     </svg>
                   )}
                   <span className="text-xs text-gray-400 dark:text-gray-500">{getVideoStatusLabel(task.videoStatus)}</span>
+                  {task.videoProgress != null && task.videoProgress > 0 && (
+                    <div className="w-full mt-1">
+                      <div className="h-1.5 w-full bg-gray-200 dark:bg-gray-700 rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                          style={{ width: `${Math.min(task.videoProgress, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] text-gray-400 dark:text-gray-500 mt-0.5 block text-center">
+                        {Math.round(task.videoProgress)}%
+                      </span>
+                    </div>
+                  )}
                 </>
               ) : (
                 <>
@@ -670,19 +687,14 @@ export default function TaskCard({
                       <span className="text-gray-600 dark:text-gray-300">{task.videoParams.seed}</span>
                     </span>
                   )}
-                  {task.videoParams?.watermark && (
+                  {task.videoParams?.klingMode && (
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                      <span className="text-gray-600 dark:text-gray-300">水印</span>
+                      <span className="text-gray-600 dark:text-gray-300">{task.videoParams.klingMode === 'pro' ? 'Pro' : 'Std'}</span>
                     </span>
                   )}
                   {task.videoParams?.generateAudio && (
                     <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
                       <span className="text-gray-600 dark:text-gray-300">音画</span>
-                    </span>
-                  )}
-                  {task.videoParams?.cameraFixed && (
-                    <span className="flex items-center gap-1 px-1.5 py-0.5 rounded bg-gray-100 dark:bg-white/[0.04] text-xs flex-shrink-0">
-                      <span className="text-gray-600 dark:text-gray-300">定镜</span>
                     </span>
                   )}
                 </>
@@ -759,6 +771,57 @@ export default function TaskCard({
                   />
                 </svg>
               </TaskActionButton>
+              {task.taskType !== 'video' && (
+              <TaskActionButton
+                tooltip="作为视频参考图"
+                onClick={async () => {
+                  if (!task.outputImages?.length) return
+                  setAppMode('video')
+
+                  // Add all output images as reference images
+                  let addedCount = 0
+                  for (const imageId of task.outputImages) {
+                    try {
+                      const dataUrl = await ensureImageCached(imageId)
+                      if (dataUrl) {
+                        addInputImage({ id: imageId, dataUrl })
+                        addedCount++
+                      }
+                    } catch (err) {
+                      console.error('Failed to load image:', imageId, err)
+                    }
+                  }
+
+                  // If task has a mask, also add the mask as draft
+                  if (task.maskImageId && task.maskTargetImageId && task.outputImages.includes(task.maskTargetImageId)) {
+                    try {
+                      const maskDataUrl = await ensureImageCached(task.maskImageId)
+                      if (maskDataUrl) {
+                        setMaskDraft({
+                          targetImageId: task.maskTargetImageId,
+                          maskDataUrl,
+                          updatedAt: Date.now(),
+                        })
+                      }
+                    } catch (err) {
+                      console.error('Failed to load mask:', task.maskImageId, err)
+                    }
+                  }
+
+                  if (addedCount > 0) {
+                    const maskInfo = task.maskImageId ? '（含遮罩）' : ''
+                    showToast(`已添加 ${addedCount} 张参考图${maskInfo}`, 'success')
+                  } else {
+                    showToast('图片加载失败', 'error')
+                  }
+                }}
+                className="p-1.5 rounded-md hover:bg-purple-50 dark:hover:bg-purple-950/30 text-gray-400 hover:text-purple-500 transition"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                </svg>
+              </TaskActionButton>
+              )}
               <TaskActionButton
                 tooltip="复用配置"
                 onClick={onReuse}

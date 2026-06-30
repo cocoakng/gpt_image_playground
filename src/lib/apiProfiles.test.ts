@@ -3,7 +3,6 @@ import {
   DEFAULT_FAL_BASE_URL,
   DEFAULT_FAL_MODEL,
   DEFAULT_IMAGES_MODEL,
-  DEFAULT_OPENAI_PROFILE_ID,
   DEFAULT_SETTINGS,
   createDefaultOpenAIProfile,
   createDefaultFalProfile,
@@ -41,349 +40,68 @@ describe('validateApiProfile', () => {
 })
 
 describe('mergeImportedSettings', () => {
-  it('replaces the default OpenAI profile with legacy imported settings when current settings are untouched', () => {
+  it('merges gallery API key from legacy imported settings when apiMode is images', () => {
     const merged = mergeImportedSettings(DEFAULT_SETTINGS, {
       baseUrl: 'https://api.example.com/v1',
       apiKey: 'imported-key',
       model: 'imported-model',
       timeout: 120,
-      apiMode: 'responses',
+      apiMode: 'images',
       codexCli: true,
       apiProxy: true,
     })
 
-    expect(merged.profiles).toHaveLength(1)
-    expect(merged.activeProfileId).toBe(DEFAULT_OPENAI_PROFILE_ID)
-    expect(merged.profiles[0]).toMatchObject({
-      id: DEFAULT_OPENAI_PROFILE_ID,
-      provider: 'openai',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'imported-key',
-      model: 'imported-model',
-      timeout: 120,
-      apiMode: 'responses',
-      codexCli: true,
-      apiProxy: true,
-    })
+    expect(merged.galleryApiKey).toBe('imported-key')
   })
 
-  it('replaces the default provider list with imported profiles when current settings are untouched', () => {
+  it('merges custom providers and API keys from wrapped import', () => {
     const merged = mergeImportedSettings(DEFAULT_SETTINGS, {
-      profiles: [
-        {
-          id: 'imported-openai',
-          name: 'Imported OpenAI',
-          provider: 'openai',
-          baseUrl: 'https://api.example.com/v1',
-          apiKey: 'openai-key',
-          model: DEFAULT_IMAGES_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-        {
-          id: 'imported-fal',
-          name: 'Imported fal',
-          provider: 'fal',
-          baseUrl: DEFAULT_FAL_BASE_URL,
-          apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-      ],
-      activeProfileId: 'imported-fal',
-    })
-
-    expect(merged.profiles.map((profile) => profile.id)).toEqual(['imported-openai', 'imported-fal'])
-    expect(merged.activeProfileId).toBe('imported-fal')
-  })
-
-  it('deduplicates imported profiles when replacing untouched default settings', () => {
-    const merged = mergeImportedSettings(DEFAULT_SETTINGS, {
-      profiles: [
-        {
-          id: 'imported-openai-a',
-          name: 'Imported OpenAI A',
-          provider: 'openai',
-          baseUrl: 'https://api.example.com/v1',
-          apiKey: 'openai-key',
-          model: DEFAULT_IMAGES_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-        {
-          id: 'imported-openai-b',
-          name: 'Imported OpenAI B',
-          provider: 'openai',
-          baseUrl: 'https://api.example.com/v1/',
-          apiKey: 'openai-key',
-          model: DEFAULT_IMAGES_MODEL,
-          timeout: 600,
-          apiMode: 'images',
-          codexCli: true,
-          apiProxy: true,
-        },
-      ],
-      activeProfileId: 'imported-openai-b',
-    })
-
-    expect(merged.profiles).toHaveLength(1)
-    expect(merged.profiles[0].id).toBe('imported-openai-a')
-    expect(merged.activeProfileId).toBe('imported-openai-a')
-  })
-
-  it('appends imported legacy settings as a new profile when current settings are customized', () => {
-    const current = mergeImportedSettings(DEFAULT_SETTINGS, {
-      baseUrl: 'https://current.example.com/v1',
-      apiKey: 'current-key',
-      model: 'current-model',
-    })
-    const merged = mergeImportedSettings(current, {
-      baseUrl: 'https://imported.example.com/v1',
-      apiKey: 'imported-key',
-      model: 'imported-model',
-    })
-
-    expect(merged.profiles).toHaveLength(2)
-    expect(merged.activeProfileId).toBe(DEFAULT_OPENAI_PROFILE_ID)
-    expect(merged.profiles[0]).toMatchObject({ apiKey: 'current-key', model: 'current-model' })
-    expect(merged.profiles[1]).toMatchObject({
-      provider: 'openai',
-      baseUrl: 'https://imported.example.com/v1',
-      apiKey: 'imported-key',
-      model: 'imported-model',
-    })
-    expect(merged.profiles[1].id).not.toBe(DEFAULT_OPENAI_PROFILE_ID)
-  })
-
-  it('appends imported profiles as new profiles when current settings are customized', () => {
-    const current = mergeImportedSettings(DEFAULT_SETTINGS, {
-      baseUrl: 'https://current.example.com/v1',
-      apiKey: 'current-key',
-      model: 'current-model',
-    })
-    const merged = mergeImportedSettings(current, {
-      profiles: [
-        {
-          id: 'imported-openai',
-          name: 'Imported OpenAI',
-          provider: 'openai',
-          baseUrl: 'https://imported.example.com/v1',
-          apiKey: 'imported-key',
-          model: DEFAULT_IMAGES_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-        {
-          id: 'imported-fal',
-          name: 'Imported fal',
-          provider: 'fal',
-          baseUrl: DEFAULT_FAL_BASE_URL,
-          apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-      ],
-      activeProfileId: 'imported-fal',
-    })
-
-    expect(merged.profiles).toHaveLength(3)
-    expect(merged.activeProfileId).toBe(DEFAULT_OPENAI_PROFILE_ID)
-    expect(merged.profiles[0]).toMatchObject({ apiKey: 'current-key', model: 'current-model' })
-    expect(merged.profiles[1]).toMatchObject({ name: 'Imported OpenAI', provider: 'openai', apiKey: 'imported-key' })
-    expect(merged.profiles[2]).toMatchObject({ name: 'Imported fal', provider: 'fal', apiKey: 'fal-key' })
-    expect(new Set(merged.profiles.map((profile) => profile.id)).size).toBe(3)
-  })
-
-  it('skips imported profiles that already exist in current customized settings', () => {
-    const current = mergeImportedSettings(DEFAULT_SETTINGS, {
-      baseUrl: 'https://current.example.com/v1',
-      apiKey: 'current-key',
-      model: 'current-model',
-    })
-    const merged = mergeImportedSettings(current, {
-      profiles: [
-        {
-          id: 'duplicate-openai',
-          name: 'Duplicate OpenAI',
-          provider: 'openai',
-          baseUrl: 'https://current.example.com/v1/',
-          apiKey: 'current-key',
-          model: 'current-model',
-          timeout: 600,
-          apiMode: 'images',
-          codexCli: true,
-          apiProxy: true,
-        },
-        {
-          id: 'new-fal',
-          name: 'New fal',
-          provider: 'fal',
-          baseUrl: DEFAULT_FAL_BASE_URL,
-          apiKey: 'fal-key',
-          model: DEFAULT_FAL_MODEL,
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        },
-      ],
-    })
-
-    expect(merged.profiles).toHaveLength(2)
-    expect(merged.profiles[0]).toMatchObject({ apiKey: 'current-key', model: 'current-model' })
-    expect(merged.profiles[1]).toMatchObject({ provider: 'fal', apiKey: 'fal-key', model: DEFAULT_FAL_MODEL })
-  })
-
-  it('reuses an existing keyed profile when importing the same custom profile without an API key', () => {
-    const current = mergeImportedSettings(DEFAULT_SETTINGS, {
-      customProviders: [{
-        id: 'custom-json',
-        name: 'Custom JSON',
-        submit: {
-          path: 'images/generations',
-          method: 'POST',
-          contentType: 'json',
-          body: { model: '$profile.model', prompt: '$prompt' },
-          result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
-        },
-      }],
-      profiles: [{
-        id: 'existing-custom',
-        name: 'Existing Custom',
-        provider: 'custom-json',
-        baseUrl: 'https://custom.example.com/v1',
-        apiKey: 'existing-key',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
-      activeProfileId: 'existing-custom',
-    })
-    const imported = normalizeSettings({
-      customProviders: [{
-        id: 'custom-json',
-        name: 'Custom JSON',
-        submit: {
-          path: 'images/generations',
-          method: 'POST',
-          contentType: 'json',
-          body: { model: '$profile.model', prompt: '$prompt' },
-          result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
-        },
-      }],
-      profiles: [{
-        id: 'imported-custom',
-        name: 'Imported Custom',
-        provider: 'custom-json',
-        baseUrl: 'https://custom.example.com/v1',
-        apiKey: '',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
-    })
-    const merged = mergeImportedSettings(current, imported)
-    const match = findEquivalentApiProfile(merged, imported.profiles[0], imported.customProviders)
-
-    expect(merged.profiles).toHaveLength(1)
-    expect(match?.id).toBe('existing-custom')
-  })
-
-  it('does not replace existing custom providers when only the default profile remains', () => {
-    const current = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      customProviders: [{
-        id: 'custom-existing',
-        name: 'Existing Provider',
-        submit: { path: 'images/generations' },
-      }],
-    })
-    const merged = mergeImportedSettings(current, {
       customProviders: [{
         id: 'custom-imported',
-        name: 'Imported Provider',
+        name: 'Custom Imported',
         submit: { path: 'images/generations' },
       }],
-      profiles: [{
-        id: 'imported-custom',
-        name: 'Imported Custom',
-        provider: 'custom-imported',
-        baseUrl: 'https://custom.example.com/v1',
-        apiKey: '',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
+      galleryApiKey: 'imported-gallery-key',
+      agentApiKey: 'imported-agent-key',
+      videoApiKeys: { 'kling-v3': 'imported-video-key' },
     })
 
-    expect(merged.customProviders.map((provider) => provider.id)).toEqual(['custom-existing', 'custom-imported'])
-    expect(merged.profiles).toHaveLength(2)
+    expect(merged.customProviders.some((p) => p.id === 'custom-imported')).toBe(true)
+    expect(merged.galleryApiKey).toBe('imported-gallery-key')
+    expect(merged.agentApiKey).toBe('imported-agent-key')
+    expect(merged.videoApiKeys['kling-v3']).toBe('imported-video-key')
   })
 
-  it('appends imported custom providers and keeps imported custom profile references', () => {
+  it('keeps existing keys when current settings already have them', () => {
     const current = mergeImportedSettings(DEFAULT_SETTINGS, {
-      baseUrl: 'https://current.example.com/v1',
-      apiKey: 'current-key',
-      model: 'current-model',
+      galleryApiKey: 'current-gallery-key',
+      agentApiKey: 'current-agent-key',
     })
     const merged = mergeImportedSettings(current, {
-      customProviders: [{
-        id: 'custom-json',
-        name: 'Custom JSON',
-        submit: {
-          path: 'images/generations',
-          method: 'POST',
-          contentType: 'json',
-          body: { model: '$profile.model', prompt: '$prompt' },
-          result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
-        },
-      }],
-      profiles: [{
-        id: 'imported-custom',
-        name: 'Imported Custom',
-        provider: 'custom-json',
-        baseUrl: 'https://custom.example.com/v1',
-        apiKey: 'custom-key',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
+      galleryApiKey: 'imported-gallery-key',
+      agentApiKey: 'imported-agent-key',
     })
 
-    expect(merged.customProviders).toHaveLength(1)
-    expect(merged.customProviders[0]).toMatchObject({ id: 'custom-json', name: 'Custom JSON' })
-    expect(merged.profiles).toHaveLength(2)
-    expect(merged.profiles[1]).toMatchObject({
-      name: 'Imported Custom',
-      provider: 'custom-json',
-      apiKey: 'custom-key',
-      model: 'custom-model',
+    // Existing keys should be preserved
+    expect(merged.galleryApiKey).toBe('current-gallery-key')
+    expect(merged.agentApiKey).toBe('current-agent-key')
+  })
+
+  it('merges video API keys without overwriting existing ones', () => {
+    const current = mergeImportedSettings(DEFAULT_SETTINGS, {
+      videoApiKeys: { 'kling-v3': 'current-kling-key' },
     })
+    const merged = mergeImportedSettings(current, {
+      videoApiKeys: { 'viduq3': 'imported-vidu-key' },
+    })
+
+    expect(merged.videoApiKeys['kling-v3']).toBe('current-kling-key')
+    expect(merged.videoApiKeys['viduq3']).toBe('imported-vidu-key')
   })
 })
 
 describe('custom providers', () => {
-  it('normalizes custom provider definitions and keeps custom profiles', () => {
+  it('normalizes custom provider definitions from async template', () => {
     const settings = normalizeSettings({
       customProviders: [{
         id: 'custom-async',
@@ -393,19 +111,7 @@ describe('custom providers', () => {
         editPath: '/v1/images/edits',
         taskPath: '/v1/images/tasks/{task_id}',
       }],
-      profiles: [{
-        id: 'profile-custom',
-        name: 'Custom Profile',
-        provider: 'custom-async',
-        baseUrl: 'https://api.example.com/v1',
-        apiKey: 'key',
-        model: 'model',
-        timeout: 60,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
-      activeProfileId: 'profile-custom',
+      galleryApiKey: 'test-key',
     })
 
     expect(settings.customProviders[0]).toMatchObject({
@@ -425,7 +131,6 @@ describe('custom providers', () => {
         path: 'images/tasks/{task_id}',
       },
     })
-    expect(settings.profiles[0].provider).toBe('custom-async')
   })
 
   it('normalizes an Apimart-style task manifest', () => {
@@ -554,32 +259,12 @@ describe('custom providers', () => {
     expect(profile.model).toBe(DEFAULT_IMAGES_MODEL)
   })
 
-  it('enables streaming by default and preserves partial image count', () => {
+  it('enables streaming by default', () => {
     expect(createDefaultOpenAIProfile().streamImages).toBe(true)
     expect(createDefaultOpenAIProfile().streamPartialImages).toBe(1)
-    expect(DEFAULT_SETTINGS.streamImages).toBe(true)
+    // DEFAULT_SETTINGS has streamImages: false (user preference for gallery)
+    expect(DEFAULT_SETTINGS.streamImages).toBe(false)
     expect(DEFAULT_SETTINGS.streamPartialImages).toBe(1)
-    expect(DEFAULT_SETTINGS.profiles[0].streamImages).toBe(true)
-    expect(DEFAULT_SETTINGS.profiles[0].streamPartialImages).toBe(1)
-
-    const normalized = normalizeSettings({
-      profiles: [
-        createDefaultOpenAIProfile({ streamImages: false, streamPartialImages: 3 }),
-      ],
-    })
-
-    expect(normalized.streamImages).toBe(false)
-    expect(normalized.streamPartialImages).toBe(3)
-    expect(normalized.profiles[0].streamImages).toBe(false)
-    expect(normalized.profiles[0].streamPartialImages).toBe(3)
-
-    const clamped = normalizeSettings({
-      profiles: [
-        createDefaultOpenAIProfile({ streamPartialImages: 8 }),
-      ],
-    })
-
-    expect(clamped.profiles[0].streamPartialImages).toBe(3)
   })
 
   it('enables Agent submit auto scroll by default', () => {

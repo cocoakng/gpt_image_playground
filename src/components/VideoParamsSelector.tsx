@@ -1,50 +1,101 @@
 import { useState, useRef, useEffect } from 'react'
-import type { VideoParams } from '../types'
+import type { VideoParams, VideoMode } from '../types'
+import { ChevronDownIcon } from './icons'
 
-const MODEL_OPTIONS = [
-  { label: 'Seedance 2.0', value: 'seedance-2.0-260128' },
-  { label: 'Seedance 2.0 快速', value: 'seedance-2.0-fast-260128' },
-  { label: 'Seedance 1.5 Pro', value: 'seedance-1.5-pro' },
-]
-
-const DEFAULT_MODEL = 'seedance-2.0-260128'
+const DEFAULT_MODEL = 'doubao-seedance-2-0-fast-260128'
 
 /** 各模型支持的配置项 */
 const VIDEO_MODEL_CAPS: Record<string, {
-  resolution?: boolean
-  duration?: boolean
-  ratio?: boolean
-  watermark?: boolean
-  generateAudio?: boolean
-  cameraFixed?: boolean
-  returnLastFrame?: boolean
+  label: string
+  resolution?: string[]
+  duration?: { min: number; max: number; step?: number; options?: number[] }
+  ratio?: string[]
+  audio?: boolean
   seed?: boolean
-  /** 支持文生视频 */
-  textMode?: boolean
-  /** 支持图生视频 */
+  mode?: string[]
+  subModel?: string[]
+  seconds?: number[]
   imageMode?: boolean
-  /** 图生视频最多上传几张 */
   maxImages?: number
+  modes?: VideoMode[]
+  frameMode?: 'start-end' | 'reference'  // 首尾帧语义：start-end=1张首帧2张首尾, reference=都是参考图不标记
 }> = {
-  'seedance-2.0-260128': {
-    resolution: true, duration: true, ratio: true,
-    watermark: true, generateAudio: true, cameraFixed: true,
-    returnLastFrame: true, seed: true,
-    textMode: true, imageMode: true, maxImages: 9,
+  'kling-v3': {
+    label: 'kling-v3',
+    mode: ['std', 'pro'],
+    duration: { min: 3, max: 15 },
+    ratio: ['16:9', '9:16', '1:1'],
+    audio: true,
+    seed: false,
+    imageMode: true,
+    maxImages: 9,
+    modes: ['text', 'image'],
+    frameMode: 'start-end',
   },
-  'seedance-2.0-fast-260128': {
-    resolution: true, duration: true, ratio: true,
-    watermark: true, generateAudio: true, cameraFixed: true,
-    returnLastFrame: true, seed: true,
-    textMode: true, imageMode: true, maxImages: 9,
+  'viduq3': {
+    label: 'viduq3',
+    resolution: ['720p', '1080p'],
+    duration: { min: 3, max: 16 },
+    ratio: ['16:9', '9:16', '1:1'],
+    audio: true,
+    seed: true,
+    imageMode: true,
+    maxImages: 7,
+    modes: ['text', 'image'],
+    frameMode: 'start-end',
   },
-  'seedance-1.5-pro': {
-    resolution: true, duration: true, ratio: true,
-    watermark: true, generateAudio: false, cameraFixed: false,
-    returnLastFrame: true, seed: true,
-    textMode: true, imageMode: true, maxImages: 9,
+  'grok-video-3': {
+    label: 'grok-video-3',
+    resolution: ['480p', '720p'],
+    seconds: [6, 10, 15],
+    ratio: ['16:9', '9:16', '3:2', '2:3', '1:1'],
+    audio: false,
+    seed: false,
+    imageMode: true,
+    maxImages: 3,
+    modes: ['text', 'image'],
+    frameMode: 'start-end',
+  },
+  'doubao-seedance-2-0-260128': {
+    label: 'doubao-seedance-2-0-260128',
+    duration: { min: 4, max: 15 },
+    ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    audio: true,
+    seed: false,
+    imageMode: true,
+    maxImages: 9,
+    modes: ['text', 'image', 'multi'],
+    frameMode: 'reference',
+  },
+  'doubao-seedance-2-0-fast-260128': {
+    label: 'doubao-seedance-2-0-fast-260128',
+    duration: { min: 4, max: 15 },
+    ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
+    audio: true,
+    seed: false,
+    imageMode: true,
+    maxImages: 9,
+    modes: ['text', 'image', 'multi'],
+    frameMode: 'reference',
+  },
+  'happyhorse-1.0': {
+    label: 'happyhorse-1.0',
+    duration: { min: 5, max: 15 },
+    ratio: ['16:9', '9:16', '4:3', '3:4', '1:1'],
+    audio: false,
+    seed: false,
+    imageMode: true,
+    maxImages: 9,
+    modes: ['text', 'image'],
+    frameMode: 'reference',
   },
 }
+
+/** 模型选项，从 VIDEO_MODEL_CAPS 动态生成 */
+export const MODEL_OPTIONS = Object.entries(VIDEO_MODEL_CAPS).map(([value, caps]) => ({
+  label: caps.label,
+  value,
+}))
 
 /** 获取模型能力 */
 export function getModelCapsFor(model: string) {
@@ -55,6 +106,8 @@ interface VideoParamsSelectorProps {
   params: VideoParams
   onChange: (params: VideoParams) => void
   disabled?: boolean
+  /** Hide the model selector dropdown, model comes from params only */
+  hideModel?: boolean
 }
 
 const RATIO_OPTIONS = [
@@ -77,17 +130,13 @@ const RATIO_ICON_SHAPES: Record<string, { w: number; h: number }> = {
   auto: { w: 14, h: 10 },
 }
 
-const RESOLUTION_OPTIONS = [
+const ALL_RESOLUTION_OPTIONS = [
   { label: '480p', value: '480p' },
   { label: '720p', value: '720p' },
   { label: '1080p', value: '1080p', pro: true },
 ]
 
-const DURATION_MIN = 4
-const DURATION_MAX = 15
-const DURATION_STEPS = [4, 5, 10, 15]
-
-export default function VideoParamsSelector({ params, onChange, disabled }: VideoParamsSelectorProps) {
+export default function VideoParamsSelector({ params, onChange, disabled, hideModel }: VideoParamsSelectorProps) {
   const update = (key: keyof VideoParams, value: VideoParams[keyof VideoParams]) => {
     onChange({ ...params, [key]: value })
   }
@@ -96,14 +145,20 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
   const handleModelChange = (value: string) => {
     const newCaps = VIDEO_MODEL_CAPS[value] ?? {}
     const resetParams: Partial<VideoParams> = {}
-    if (!newCaps.generateAudio) resetParams.generateAudio = undefined
-    if (!newCaps.cameraFixed) resetParams.cameraFixed = undefined
-    if (!newCaps.returnLastFrame) resetParams.returnLastFrame = undefined
-    if (!newCaps.watermark) resetParams.watermark = undefined
+    if (!newCaps.audio) resetParams.generateAudio = undefined
+    if (!newCaps.seed) resetParams.seed = undefined
+    if (!newCaps.mode) resetParams.klingMode = undefined
+    if (!newCaps.seconds) resetParams.grokSeconds = undefined
+    if (!newCaps.resolution) resetParams.resolution = undefined
     onChange({ ...params, model: value, ...resetParams })
   }
 
   const currentModelCaps = VIDEO_MODEL_CAPS[params.model || DEFAULT_MODEL] ?? VIDEO_MODEL_CAPS[DEFAULT_MODEL]!
+
+  // 当前模型支持的分辨率
+  const supportedResolutions = currentModelCaps.resolution
+    ? ALL_RESOLUTION_OPTIONS.filter(o => currentModelCaps.resolution!.includes(o.value))
+    : ALL_RESOLUTION_OPTIONS
 
   const [expanded, setExpanded] = useState(false)
   const panelRef = useRef<HTMLDivElement>(null)
@@ -124,21 +179,25 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
   const ratioLabel = params.ratio === 'adaptive' ? '自适应' : params.ratio
   const durationLabel = `${params.duration}s`
   const resolutionLabel = params.resolution
-  const hasAudio = params.generateAudio
 
   return (
     <div className="flex items-center gap-2 flex-wrap">
       {/* 模型选择器 */}
-      <select
-        value={params.model || DEFAULT_MODEL}
-        onChange={(e) => handleModelChange(e.target.value)}
-        disabled={disabled}
-        className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] px-3 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none pr-8"
-      >
-        {MODEL_OPTIONS.map((opt) => (
-          <option key={opt.value} value={opt.value}>{opt.label}</option>
-        ))}
-      </select>
+      {!hideModel && (
+        <div className="relative">
+          <select
+            value={params.model || DEFAULT_MODEL}
+            onChange={(e) => handleModelChange(e.target.value)}
+            disabled={disabled}
+            className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
+          >
+            {MODEL_OPTIONS.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+        </div>
+      )}
 
       {/* 配置胶囊 - 相对定位容器 */}
       <div className="relative">
@@ -150,21 +209,29 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
         {/* 比例图标 */}
         <RatioIcon shape={RATIO_ICON_SHAPES[params.ratio] || RATIO_ICON_SHAPES.wide} />
         <span>{ratioLabel}</span>
-        <span className="text-gray-400">|</span>
-        {/* 时长 */}
-        <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <circle cx="12" cy="12" r="10" />
-          <path d="M12 6v6l4 2" />
-        </svg>
-        <span>{durationLabel}</span>
-        <span className="text-gray-400">|</span>
-        {/* 分辨率 */}
-        <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-          <rect x="2" y="3" width="20" height="14" rx="2" />
-          <path d="M8 21h8M12 17v4" />
-        </svg>
-        <span>{resolutionLabel}</span>
-        {currentModelCaps.generateAudio && (
+        {(currentModelCaps.duration || currentModelCaps.seconds) && (
+          <>
+            <span className="text-gray-400">|</span>
+            {/* 时长 */}
+            <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <circle cx="12" cy="12" r="10" />
+              <path d="M12 6v6l4 2" />
+            </svg>
+            <span>{durationLabel}</span>
+          </>
+        )}
+        {currentModelCaps.resolution && (
+          <>
+            <span className="text-gray-400">|</span>
+            {/* 分辨率 */}
+            <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+              <rect x="2" y="3" width="20" height="14" rx="2" />
+              <path d="M8 21h8M12 17v4" />
+            </svg>
+            <span>{resolutionLabel}</span>
+          </>
+        )}
+        {currentModelCaps.audio && (
           <>
             <span className="text-gray-400">|</span>
             <svg className="h-3.5 w-3.5 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
@@ -172,7 +239,7 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
               <circle cx="6" cy="18" r="3" />
               <circle cx="18" cy="16" r="3" />
             </svg>
-            <span>{hasAudio ? '开启' : '关闭'}</span>
+            <span>{params.generateAudio ? '开启' : '关闭'}</span>
           </>
         )}
         {/* 下拉箭头 */}
@@ -194,12 +261,12 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
                 画面比例
               </h4>
               <div className="grid grid-cols-4 gap-2">
-                {RATIO_OPTIONS.map((opt) => (
+                {RATIO_OPTIONS.filter(o => currentModelCaps.ratio!.includes(o.value)).map((opt) => (
                   <button
                     key={opt.value}
                     type="button"
                     disabled={disabled}
-                    onClick={() => update('ratio', opt.value)}
+                    onClick={() => update('ratio', opt.value as VideoParams['ratio'])}
                     className={`flex flex-col items-center justify-center gap-1.5 rounded-lg p-2.5 text-xs transition ${
                       params.ratio === opt.value
                         ? 'bg-blue-500 text-white'
@@ -214,6 +281,32 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
             </div>
           )}
 
+          {/* Kling 生成模式 */}
+          {currentModelCaps.mode && (
+            <div className="mb-5">
+              <h4 className="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                生成模式
+              </h4>
+              <div className="flex gap-2">
+                {currentModelCaps.mode.map((m) => (
+                  <button
+                    key={m}
+                    type="button"
+                    disabled={disabled}
+                    onClick={() => update('klingMode', m as 'std' | 'pro')}
+                    className={`rounded-lg px-4 py-2 text-sm transition ${
+                      params.klingMode === m
+                        ? 'bg-blue-500 text-white'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]'
+                    }`}
+                  >
+                    {m === 'std' ? '标准 (720p)' : '专业 (1080p)'}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* 时长 */}
           {currentModelCaps.duration && (
             <div className="mb-5">
@@ -221,30 +314,39 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
                 时长
               </h4>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-gray-600 dark:text-gray-300 w-8 text-right">{DURATION_MIN}s</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300 w-8 text-right">{currentModelCaps.duration!.min}s</span>
                 <input
                   type="range"
-                  min={DURATION_MIN}
-                  max={DURATION_MAX}
-                  step={1}
+                  min={currentModelCaps.duration!.min}
+                  max={currentModelCaps.duration!.max}
+                  step={currentModelCaps.duration!.step || 1}
                   value={params.duration}
                   onChange={(e) => update('duration', Number(e.target.value))}
                   disabled={disabled}
                   className="flex-1 h-2 rounded-full appearance-none bg-gray-200 dark:bg-white/[0.1] [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-blue-500 [&::-webkit-slider-thumb]:cursor-pointer"
                 />
-                <span className="text-sm text-gray-600 dark:text-gray-300 w-8">{DURATION_MAX}s</span>
+                <span className="text-sm text-gray-600 dark:text-gray-300 w-8">{currentModelCaps.duration!.max}s</span>
               </div>
-              <div className="flex justify-between mt-1 px-1">
-                {DURATION_STEPS.map((s) => (
+            </div>
+          )}
+
+          {/* Grok 固定时长 */}
+          {currentModelCaps.seconds && (
+            <div className="mb-5">
+              <h4 className="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
+                时长
+              </h4>
+              <div className="flex gap-2">
+                {currentModelCaps.seconds.map((s) => (
                   <button
                     key={s}
                     type="button"
                     disabled={disabled}
-                    onClick={() => update('duration', s)}
-                    className={`text-xs px-2 py-0.5 rounded transition ${
-                      params.duration === s
+                    onClick={() => update('grokSeconds', s as VideoParams['grokSeconds'])}
+                    className={`rounded-lg px-4 py-2 text-sm transition ${
+                      params.grokSeconds === s
                         ? 'bg-blue-500 text-white'
-                        : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'
+                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]'
                     }`}
                   >
                     {s}s
@@ -261,34 +363,31 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
                 分辨率
               </h4>
               <div className="flex gap-2">
-                {RESOLUTION_OPTIONS.map((opt) => {
-                  const isDisabled = opt.pro && params.model === 'seedance-2.0-fast-260128'
-                  return (
-                    <button
-                      key={opt.value}
-                      type="button"
-                      disabled={disabled || isDisabled}
-                      onClick={() => update('resolution', opt.value as VideoParams['resolution'])}
-                      className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm transition ${
-                        params.resolution === opt.value
-                          ? 'bg-blue-500 text-white'
-                          : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]'
-                      } ${isDisabled ? 'opacity-40 cursor-not-allowed' : ''}`}
-                    >
-                      {opt.label}
-                      {opt.pro && (
-                        <span className={`text-[10px] ${params.resolution === opt.value ? 'text-yellow-200' : 'text-yellow-500'}`}>Pro</span>
-                      )}
-                    </button>
-                  )
-                })}
-              </div>
+                {supportedResolutions.map((opt) => (
+                <button
+                  key={opt.value}
+                  type="button"
+                  disabled={disabled}
+                  onClick={() => update('resolution', opt.value as VideoParams['resolution'])}
+                  className={`flex items-center gap-1.5 rounded-lg px-4 py-2 text-sm transition ${
+                    params.resolution === opt.value
+                      ? 'bg-blue-500 text-white'
+                      : 'text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/[0.06]'
+                  }`}
+                >
+                  {opt.label}
+                  {opt.pro && (
+                    <span className={`text-[10px] ${params.resolution === opt.value ? 'text-yellow-200' : 'text-yellow-500'}`}>Pro</span>
+                  )}
+                </button>
+              ))}
+            </div>
             </div>
           )}
 
           {/* 音画 */}
-          {currentModelCaps.generateAudio && (
-            <div className="mb-5">
+          {currentModelCaps.audio && (
+            <div className="mb-3">
               <h4 className="mb-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
                 音频
               </h4>
@@ -319,60 +418,19 @@ export default function VideoParamsSelector({ params, onChange, disabled }: Vide
                 <summary className="cursor-pointer text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
                   高级选项
                 </summary>
-                <div className="mt-3 space-y-3">
-                  {currentModelCaps.watermark && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-300">水印</span>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => update('watermark', !params.watermark)}
-                        className={`relative w-10 h-5 rounded-full transition-colors ${params.watermark ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      >
-                        <div className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${params.watermark ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  )}
-                  {currentModelCaps.cameraFixed && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-300">固定镜头</span>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => update('cameraFixed', !params.cameraFixed)}
-                        className={`relative w-10 h-5 rounded-full transition-colors ${params.cameraFixed ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      >
-                        <div className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${params.cameraFixed ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  )}
-                  {currentModelCaps.returnLastFrame && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-300">返回尾帧</span>
-                      <button
-                        type="button"
-                        disabled={disabled}
-                        onClick={() => update('returnLastFrame', !params.returnLastFrame)}
-                        className={`relative w-10 h-5 rounded-full transition-colors ${params.returnLastFrame ? 'bg-blue-500' : 'bg-gray-300 dark:bg-gray-600'}`}
-                      >
-                        <div className={`absolute top-0.5 left-0.5 h-4 w-4 rounded-full bg-white transition-transform ${params.returnLastFrame ? 'translate-x-5' : 'translate-x-0'}`} />
-                      </button>
-                    </div>
-                  )}
-                  {currentModelCaps.seed && (
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm text-gray-600 dark:text-gray-300">随机种子</span>
-                      <input
-                        type="number"
-                        min={1}
-                        value={params.seed ?? ''}
-                        onChange={(e) => update('seed', e.target.value ? Number(e.target.value) : undefined)}
-                        placeholder="留空随机"
-                        disabled={disabled}
-                        className="w-24 rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white/60 dark:bg-white/[0.03] px-2 py-1 text-sm text-gray-700 dark:text-gray-200 outline-none"
-                      />
-                    </div>
-                  )}
+                <div className="mt-3">
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-gray-600 dark:text-gray-300">随机种子</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={params.seed ?? ''}
+                      onChange={(e) => update('seed', e.target.value ? Number(e.target.value) : undefined)}
+                      placeholder="留空随机"
+                      disabled={disabled}
+                      className="w-24 rounded-lg border border-gray-200 dark:border-white/[0.08] bg-white/60 dark:bg-white/[0.03] px-2 py-1 text-sm text-gray-700 dark:text-gray-200 outline-none"
+                    />
+                  </div>
                 </div>
               </details>
             </div>

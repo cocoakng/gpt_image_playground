@@ -5,12 +5,15 @@ import SearchBar from './SearchBar'
 import { FavoriteCollectionsView } from './FavoriteCollections'
 
 export default function VideoWorkspace() {
-  const videoProfiles = useStore((s) => s.videoProfiles)
+  const selectedVideoModel = useStore((s) => s.selectedVideoModel)
+  const videoApiKeys = useStore((s) => s.videoApiKeys)
   const filterFavorite = useStore((s) => s.filterVideoFavorite)
   const activeFavoriteCollectionId = useStore((s) => s.activeVideoFavoriteCollectionId)
   const setShowSettings = useStore((s) => s.setShowSettings)
 
-  if (videoProfiles.length === 0) {
+  const hasConfig = Object.values(videoApiKeys ?? {}).some((k) => typeof k === 'string' && k.trim().length > 0)
+
+  if (!hasConfig) {
     return (
       <main className="flex items-center justify-center min-h-[80vh]">
         <div className="text-center max-w-md px-6">

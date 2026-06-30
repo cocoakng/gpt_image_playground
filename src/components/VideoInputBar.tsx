@@ -1,22 +1,19 @@
 import { useRef, useEffect, useState, useCallback } from 'react'
 import { useStore, submitTask, addImageFromFile, createInputImageFromFile } from '../store'
 import { getActiveVideoProfile } from '../lib/apiProfiles'
-import VideoParamsSelector, { getModelCapsFor } from './VideoParamsSelector'
+import VideoParamsSelector, { getModelCapsFor, MODEL_OPTIONS } from './VideoParamsSelector'
 import { dismissAllTooltips } from '../lib/tooltipDismiss'
 import Select from './Select'
+import { ChevronDownIcon } from './icons'
 import type { VideoMode, VideoReference, AudioReference } from '../types'
+
+const DEFAULT_MODEL = 'doubao-seedance-2-0-fast-260128'
 
 const MODES: { mode: VideoMode; label: string; icon: string }[] = [
   { mode: 'multi', label: '多模态', icon: 'multi' },
   { mode: 'image', label: '图生视频', icon: 'image' },
   { mode: 'text', label: '文生视频', icon: 'text' },
 ]
-
-const MODEL_VIDEO_CAPS: Record<string, { multiMode?: boolean }> = {
-  'seedance-2.0-260128': { multiMode: true },
-  'seedance-2.0-fast-260128': { multiMode: true },
-  'seedance-1.5-pro': { multiMode: false },
-}
 
 const MAX_VIDEOS = 3
 const MAX_AUDIOS = 3
@@ -29,13 +26,14 @@ export default function VideoInputBar() {
   const setVideoParams = useStore((s) => s.setVideoParams)
   const videoMode = useStore((s) => s.videoMode)
   const setVideoMode = useStore((s) => s.setVideoMode)
-  const videoProfiles = useStore((s) => s.videoProfiles)
-  const activeVideoProfileId = useStore((s) => s.activeVideoProfileId)
-  const setActiveVideoProfileId = useStore((s) => s.setActiveVideoProfileId)
+  const selectedVideoModel = useStore((s) => s.selectedVideoModel)
+  const setSelectedVideoModel = useStore((s) => s.setSelectedVideoModel)
+  const videoApiKeys = useStore((s) => s.videoApiKeys)
   const inputImages = useStore((s) => s.inputImages)
   const removeInputImage = useStore((s) => s.removeInputImage)
   const moveInputImage = useStore((s) => s.moveInputImage)
   const replaceInputImage = useStore((s) => s.replaceInputImage)
+  const setLightboxImageId = useStore((s) => s.setLightboxImageId)
   const referenceVideos = useStore((s) => s.referenceVideos)
   const referenceAudios = useStore((s) => s.referenceAudios)
   const addVideoFromFile = useStore((s) => s.addVideoFromFile)
@@ -111,21 +109,48 @@ export default function VideoInputBar() {
     }
   }, [prompt])
 
-  // 根据当前模型获取能力
-  const currentModel = videoParams.model || 'seedance-2.0-260128'
+  const currentModel = selectedVideoModel || videoParams.model || DEFAULT_MODEL
   const modelCaps = getModelCapsFor(currentModel)
-  const maxImages = modelCaps.maxImages ?? 9
-  const textModeAvailable = modelCaps.textMode !== false
-  const imageModeAvailable = modelCaps.imageMode !== false
-  const multiModeAvailable = MODEL_VIDEO_CAPS[currentModel]?.multiMode !== false
 
-  // 过滤可用模式
-  const availableModes = MODES.filter(({ mode }) => {
-    if (mode === 'text') return textModeAvailable
-    if (mode === 'image') return imageModeAvailable
-    if (mode === 'multi') return multiModeAvailable
-    return true
+  // 已配置 API Key 的模型列表
+  const configuredModels = MODEL_OPTIONS.filter((opt) => {
+    const key = videoApiKeys?.[opt.value]
+    return typeof key === 'string' && key.trim().length > 0
   })
+
+  // 当当前选中模型未配置 key 时，自动切换到第一个已配置模型（配置页面打开时不切换）
+  useEffect(() => {
+    if (showSettings) return
+    if (configuredModels.length === 0) return
+    const currentKey = videoApiKeys?.[currentModel]
+    if (!currentKey && configuredModels[0]) {
+      setSelectedVideoModel(configuredModels[0].value)
+    }
+  }, [currentModel, videoApiKeys, configuredModels.length, showSettings])
+
+  // 当切换视频模型时，同步到 videoParams
+  useEffect(() => {
+    if (selectedVideoModel) {
+      setVideoParams({ ...videoParams, model: selectedVideoModel })
+    }
+  }, [selectedVideoModel])
+
+  const maxImages = modelCaps.maxImages ?? 9
+
+  // 过滤可用模式（基于模型配置中 modes 字段）
+  const availableModes = MODES.filter(({ mode }) => {
+    if (!modelCaps.modes) return true
+    return modelCaps.modes.includes(mode)
+  })
+
+  // 当切换模型导致当前模式不可用时，自动切换到第一个可用模式
+  useEffect(() => {
+    if (availableModes.length === 0) return
+    const currentAvailable = availableModes.some((m) => m.mode === videoMode)
+    if (!currentAvailable) {
+      setVideoMode(availableModes[0].mode)
+    }
+  }, [availableModes, videoMode, setVideoMode])
 
   const isMultiMode = videoMode === 'multi'
   const isImageMode = videoMode === 'image'
@@ -181,31 +206,6 @@ export default function VideoInputBar() {
     removeInputImage(idx)
   }, [removeInputImage])
 
-  const handleEditReferenceImage = useCallback((img: { id: string; dataUrl: string }, idx: number) => {
-    if (settings.referenceImageEditAction === 'replace-reference') {
-      replaceImageTargetRef.current = { index: idx, id: img.id }
-      replaceFileInputRef.current?.click()
-      return
-    }
-
-    setConfirmDialog({
-      title: '编辑参考图',
-      message: '请选择要执行的操作。若不勾选下方的选项，则每次都询问；勾选后可在 **设置-习惯配置** 修改选择。',
-      checkbox: { label: '以后默认执行此选择' },
-      buttons: [
-        {
-          label: '替换参考图',
-          tone: 'secondary',
-          action: (remember) => {
-            if (remember) setSettings({ referenceImageEditAction: 'replace-reference' })
-            replaceImageTargetRef.current = { index: idx, id: img.id }
-            replaceFileInputRef.current?.click()
-          },
-        },
-      ],
-    })
-  }, [settings.referenceImageEditAction, setConfirmDialog, setSettings])
-
   const handleReplaceFileSelect = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
     if (!files?.length || !replaceImageTargetRef.current) return
@@ -248,10 +248,16 @@ export default function VideoInputBar() {
       return
     }
 
-    const profile = getActiveVideoProfile({ videoProfiles, activeVideoProfileId } as any)
-    if (!profile || !profile.apiKey) {
-      showToast('请先完善视频 API 配置', 'error')
+    const apiKey = useStore.getState().videoApiKeys?.[selectedVideoModel] ?? ''
+    if (!apiKey) {
+      showToast('请先配置视频 API Key', 'error')
       setShowSettings(true, 'video')
+      return
+    }
+
+    // viduq3 必须上传图片
+    if (selectedVideoModel === 'viduq3' && inputImages.length === 0) {
+      showToast('viduq3 模型需要上传参考图片', 'error')
       return
     }
 
@@ -262,7 +268,7 @@ export default function VideoInputBar() {
     } finally {
       setSubmitting(false)
     }
-  }, [prompt, videoProfiles, activeVideoProfileId, setShowSettings, showToast])
+  }, [selectedVideoModel, setShowSettings, showToast, prompt, inputImages.length])
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
@@ -277,14 +283,16 @@ export default function VideoInputBar() {
 
   const frameLabel = (idx: number) => {
     if (isMultiMode) return `图${idx + 1}`
+    if (modelCaps.frameMode !== 'start-end') return `图${idx + 1}`
     if (inputImages.length === 1) return '首帧'
     if (inputImages.length === 2) return idx === 0 ? '首帧' : '尾帧'
     return `图${idx + 1}`
   }
 
-  // 图生视频模式下的帧角色标记
+  // 图生视频模式下的帧角色标记 - 根据模型 frameMode 决定
   const frameBadge = (idx: number) => {
     if (!isImageMode) return null
+    if (modelCaps.frameMode !== 'start-end') return null
     if (inputImages.length === 1) return '首帧'
     if (inputImages.length === 2) return idx === 0 ? '首帧' : '尾帧'
     return null
@@ -458,7 +466,15 @@ export default function VideoInputBar() {
                       <div className="absolute -right-[3px] top-0 bottom-0 w-[2px] bg-blue-500 rounded-full z-40 shadow-sm pointer-events-none" />
                     )}
                     <div className={`relative h-[52px] w-[52px] rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 shadow-sm transition-opacity ${isDragging ? 'opacity-40' : ''}`}>
-                      <img src={img.dataUrl} alt="" className="h-full w-full object-cover cursor-grab active:cursor-grabbing pointer-events-none" />
+                      <img
+                        src={img.dataUrl}
+                        alt=""
+                        className="h-full w-full object-cover cursor-pointer"
+                        onClick={() => {
+                          const imageIds = inputImages.map(i => i.id)
+                          setLightboxImageId(img.id, imageIds)
+                        }}
+                      />
                       {/* 序号角标 */}
                       <span className="absolute bottom-1 left-1 flex h-4 w-4 items-center justify-center rounded-full bg-black/55 text-[9px] font-semibold text-white backdrop-blur-sm z-10 pointer-events-none">
                         {idx + 1}
@@ -471,28 +487,14 @@ export default function VideoInputBar() {
                           {frameBadge(idx)}
                         </span>
                       )}
-                      {/* 编辑按钮 */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          handleEditReferenceImage(img, idx)
-                        }}
-                        className="absolute inset-0 w-full h-full bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center cursor-pointer z-20 focus:outline-none border-none"
-                        title="编辑"
-                      >
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
                     </div>
                     <button
                       type="button"
                       onClick={() => handleRemoveImage(idx)}
-                      className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-red-500 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none shadow-md hover:bg-red-600 z-30"
-                      title="移除"
+                      className="absolute -top-1.5 -right-1.5 h-5 w-5 rounded-full bg-gray-800/80 dark:bg-white/80 text-white dark:text-gray-800 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none shadow-md hover:bg-gray-900 dark:hover:bg-white z-30"
+                      title="删除"
                     >
-                      <svg className="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M6 18L18 6M6 6l12 12" />
                       </svg>
                     </button>
@@ -503,12 +505,19 @@ export default function VideoInputBar() {
                 <button
                   type="button"
                   onClick={() => imageFileInputRef.current?.click()}
-                  className="shrink-0 h-[52px] w-[52px] rounded-lg border border-dashed border-gray-300 dark:border-white/[0.12] flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-white/[0.2] transition-colors"
-                  title="添加图片"
+                  className={`shrink-0 h-[52px] w-[52px] rounded-lg border border-dashed flex items-center justify-center transition-colors relative ${
+                    selectedVideoModel === 'viduq3' && inputImages.length === 0
+                      ? 'border-red-300 dark:border-red-500/50 text-red-400 hover:text-red-500 hover:border-red-400'
+                      : 'border-gray-300 dark:border-white/[0.12] text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-white/[0.2]'
+                  }`}
+                  title={selectedVideoModel === 'viduq3' && inputImages.length === 0 ? 'viduq3 模型必须上传参考图片' : '添加图片'}
                 >
                   <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
+                  {selectedVideoModel === 'viduq3' && inputImages.length === 0 && (
+                    <span className="absolute -top-0.5 -right-0.5 h-2.5 w-2.5 rounded-full bg-red-500 animate-pulse" />
+                  )}
                 </button>
               )}
             </div>
@@ -714,24 +723,27 @@ export default function VideoInputBar() {
 
         {/* Params row */}
         <div className="mt-2 flex items-center gap-2 flex-wrap">
+          {/* 模型选择 */}
+          <div className="relative">
+            <select
+              value={currentModel}
+              onChange={(e) => setSelectedVideoModel(e.target.value)}
+              disabled={submitting}
+              className="rounded-full border border-gray-300 dark:border-white/[0.12] bg-white/60 dark:bg-white/[0.04] pl-3 pr-8 py-1.5 text-sm text-gray-700 dark:text-gray-200 outline-none appearance-none transition hover:bg-white dark:hover:bg-white/[0.08] hover:border-gray-400 dark:hover:border-white/20 cursor-pointer disabled:cursor-not-allowed"
+            >
+              {configuredModels.map((opt) => (
+                <option key={opt.value} value={opt.value}>{opt.label}</option>
+              ))}
+            </select>
+            <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />
+          </div>
+
           <VideoParamsSelector
-            params={videoParams}
+            params={{ ...videoParams, model: currentModel }}
             onChange={setVideoParams}
             disabled={submitting}
+            hideModel
           />
-
-          {/* Video profile selector */}
-          {videoProfiles.length > 0 && (
-            <div className="ml-2">
-              <Select
-                value={activeVideoProfileId}
-                onChange={(id) => setActiveVideoProfileId(id)}
-                options={videoProfiles.map((p) => ({ label: p.name || p.id, value: p.id }))}
-                disabled={submitting}
-                className="rounded-lg border border-gray-200/70 bg-white/60 px-2.5 py-2 text-xs text-gray-600 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-400 dark:focus:border-blue-500/50"
-              />
-            </div>
-          )}
 
           {/* Settings button */}
           <button

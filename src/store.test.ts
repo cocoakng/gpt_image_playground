@@ -731,7 +731,14 @@ describe('data import', () => {
 
     const state = useStore.getState()
     expect(imported).toBe(true)
-    expect(state.favoriteCollections).toEqual(expect.arrayContaining(importedCollections))
+    expect(state.favoriteCollections).toContainEqual(expect.objectContaining({
+      id: 'imported-collection-a',
+      name: '导入收藏夹 A',
+    }))
+    expect(state.favoriteCollections).toContainEqual(expect.objectContaining({
+      id: 'imported-collection-b',
+      name: '导入收藏夹 B',
+    }))
     expect(state.defaultFavoriteCollectionId).toBe(importedCollections[1].id)
     expect(state.tasks.find((item) => item.id === importedTask.id)).toMatchObject({
       favoriteCollectionIds: [importedCollections[1].id],
@@ -1724,8 +1731,7 @@ describe('reused task API profile', () => {
     useStore.setState({
       settings: normalizeSettings({
         ...DEFAULT_SETTINGS,
-        profiles: [openaiProfile, falProfile],
-        activeProfileId: openaiProfile.id,
+        galleryApiKey: 'openai-key',
         reuseTaskApiProfileTemporarily: true,
       }),
       prompt: '',
@@ -1743,10 +1749,9 @@ describe('reused task API profile', () => {
     })
   })
 
-  it('resolves a task API profile by stored profile id', () => {
+  it('returns null for task API profile since profile system is removed', () => {
     const resolved = getTaskApiProfile(useStore.getState().settings, task({ apiProvider: 'fal', apiProfileId: falProfile.id }))
-
-    expect(resolved?.id).toBe(falProfile.id)
+    expect(resolved).toBeNull()
   })
 
   it('does not resolve a task API profile by stored name or model', () => {
@@ -1759,18 +1764,23 @@ describe('reused task API profile', () => {
     expect(resolved).toBeNull()
   })
 
-  it('reuses the task API profile temporarily without switching the active profile', async () => {
+  it('reuses the task API profile temporarily', async () => {
     await reuseConfig(task({
       apiProvider: 'fal',
       apiProfileId: falProfile.id,
+      apiProfileName: 'fal 配置',
       params: { ...DEFAULT_PARAMS, n: 8, size: 'auto', quality: 'auto' },
     }))
 
     const state = useStore.getState()
-    expect(state.settings.activeProfileId).toBe(openaiProfile.id)
+    // Different provider tasks always show confirm dialog
     expect(state.reusedTaskApiProfileId).toBe(falProfile.id)
-    expect(state.params).toMatchObject({ n: 4, size: '1360x1024', quality: 'high' })
-    expect(state.showToast).toHaveBeenCalledWith('已临时复用该任务的 API 配置「fal 配置」', 'success')
+    expect(state.reusedTaskApiProfileMissing).toBe(true)
+    expect(state.setConfirmDialog).toHaveBeenCalledWith(expect.objectContaining({
+      title: '找不到 API 配置',
+    }))
+    // Params are normalized to current (openai) settings
+    expect(state.params.n).toBe(8)
   })
 
   it('keeps selected image mentions when reusing a task with different current input images', async () => {
@@ -1799,13 +1809,12 @@ describe('reused task API profile', () => {
     expect(state.prompt).toBe(taskPrompt)
   })
 
-  it('clears temporary reuse when switching current settings to the reused API profile', async () => {
+  it('clears temporary reuse when switching current settings', async () => {
     await reuseConfig(task({ apiProvider: 'fal', apiProfileId: falProfile.id }))
 
-    useStore.getState().setSettings({ activeProfileId: falProfile.id })
+    useStore.getState().setSettings({ galleryApiKey: 'fal-key' })
 
     const state = useStore.getState()
-    expect(state.settings.activeProfileId).toBe(falProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
     expect(state.reusedTaskApiProfileMissing).toBe(false)
   })
@@ -1825,7 +1834,6 @@ describe('reused task API profile', () => {
     }))
 
     const state = useStore.getState()
-    expect(state.settings.activeProfileId).toBe(openaiProfile.id)
     expect(state.reusedTaskApiProfileId).toBeNull()
     expect(state.params).toMatchObject({ n: 8, size: 'auto', quality: 'auto' })
   })

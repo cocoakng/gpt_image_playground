@@ -23,7 +23,7 @@ import type {
   ResponsesOutputItem,
 } from './types'
 import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_PARAMS, DEFAULT_VIDEO_PARAMS } from './types'
-import { DEFAULT_SETTINGS, getActiveApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, validateApiProfile, getActiveVideoProfile, validateVideoProfile, createDefaultVideoProfile } from './lib/apiProfiles'
+import { DEFAULT_SETTINGS, DEFAULT_VIDEO_MODEL, DEFAULT_FAL_MODEL, getActiveApiProfile, validateApiProfile, buildGalleryApiProfile, buildAgentApiProfile, buildVideoApiProfile, getCustomProviderDefinition, mergeImportedSettings, normalizeSettings, createDefaultFalProfile } from './lib/apiProfiles'
 import { dismissAllTooltips } from './lib/tooltipDismiss'
 import { remapImageMentionsForOrder, replaceImageMentionsForApi } from './lib/promptImageMentions'
 import {
@@ -45,6 +45,11 @@ import {
   deleteImage,
   clearImages,
   storeImage,
+  getVideo,
+  storeVideo,
+  getAllVideoIds,
+  deleteVideo,
+  clearVideos,
 } from './lib/db'
 import { callImageApi } from './lib/api'
 import { callAgentConversationTitleApi, callAgentResponsesApi, callBatchImageSingle, parseBatchImageCallArguments, type AgentApiResultImage, type BatchImageCallResult } from './lib/agentApi'
@@ -570,10 +575,73 @@ function stripPersistedAgentConversations(value: unknown): unknown {
 
 export function migratePersistedState(persistedState: unknown): unknown {
   if (!isRecord(persistedState)) return persistedState
-  return {
+
+  const state: Record<string, unknown> = {
     ...persistedState,
     agentConversations: stripPersistedAgentConversations(persistedState.agentConversations),
+    settings: isRecord(persistedState.settings) ? persistedState.settings : null,
   }
+
+  // Version 4 migration: remove profile arrays, migrate videoProfiles to videoApiKeys
+  if (state.settings && isRecord(state.settings)) {
+    const s = state.settings as Record<string, unknown>
+
+    // 从旧 profiles 提取 galleryApiKey
+    const profiles = Array.isArray(s.profiles) ? s.profiles : []
+    const activeProfileId = typeof s.activeProfileId === 'string' ? s.activeProfileId : ''
+    const activeProfile = profiles.find((p: unknown) => isRecord(p) && (p as Record<string, unknown>).id === activeProfileId) as Record<string, unknown> | undefined
+    const legacyApiKey = typeof activeProfile?.apiKey === 'string' ? activeProfile.apiKey : (typeof s.apiKey === 'string' ? s.apiKey : '')
+    const apiMode = activeProfile?.apiMode === 'responses' ? 'responses' : 'images'
+
+    // 从旧 agentProfiles 提取 agentApiKey
+    const agentProfiles = Array.isArray(s.agentProfiles) ? s.agentProfiles : []
+    const activeAgentProfileId = typeof s.activeAgentProfileId === 'string' ? s.activeAgentProfileId : ''
+    const activeAgentProfile = agentProfiles.find((p: unknown) => isRecord(p) && (p as Record<string, unknown>).id === activeAgentProfileId) as Record<string, unknown> | undefined
+    const legacyAgentKey = typeof activeAgentProfile?.apiKey === 'string' ? activeAgentProfile.apiKey : (apiMode === 'responses' ? legacyApiKey : '')
+
+    // 从旧 videoProfiles 迁移到 videoApiKeys
+    const videoApiKeys: Record<string, string> = {}
+    if (Array.isArray(s.videoProfiles) && s.videoProfiles.length) {
+      for (const vp of s.videoProfiles) {
+        if (isRecord(vp) && typeof vp.model === 'string' && typeof vp.apiKey === 'string' && vp.apiKey) {
+          videoApiKeys[vp.model] = vp.apiKey
+        }
+      }
+    }
+    if (Object.keys(videoApiKeys).length === 0 && typeof s.videoApiKey === 'string' && s.videoApiKey) {
+      videoApiKeys['doubao-seedance-2-0-fast-260128'] = s.videoApiKey as string
+    }
+
+    const selectedVideoModel = typeof s.selectedVideoModel === 'string' ? s.selectedVideoModel
+      : (typeof s.activeVideoProfileId === 'string' && Array.isArray(s.videoProfiles)
+        ? (s.videoProfiles.find((p: unknown) => isRecord(p) && (p as Record<string, unknown>).id === s.activeVideoProfileId) as Record<string, unknown> | undefined)?.model as string
+        : 'doubao-seedance-2-0-fast-260128') || 'doubao-seedance-2-0-fast-260128'
+
+    // 清理旧字段
+    delete s.profiles
+    delete s.activeProfileId
+    delete s.agentProfiles
+    delete s.activeAgentProfileId
+    delete s.videoProfiles
+    delete s.activeVideoProfileId
+
+    state.settings = {
+      ...s,
+      galleryApiKey: typeof s.galleryApiKey === 'string' ? s.galleryApiKey : (apiMode === 'images' ? legacyApiKey : ''),
+      agentApiKey: typeof s.agentApiKey === 'string' ? s.agentApiKey : legacyAgentKey,
+      videoApiKeys,
+      selectedVideoModel,
+      videoApiKey: '',
+    }
+  }
+
+  // Migrate top-level persisted fields
+  delete state.videoProfiles
+  delete state.activeVideoProfileId
+  delete state.agentProfiles
+  delete state.activeAgentProfileId
+
+  return state
 }
 
 function normalizeFavoriteCollectionName(value: string) {
@@ -677,8 +745,8 @@ export function getPersistedState(state: AppState) {
   return {
     settings,
     params: state.params,
-    videoProfiles: state.videoProfiles,
-    activeVideoProfileId: state.activeVideoProfileId,
+    videoApiKeys: state.videoApiKeys,
+    selectedVideoModel: state.selectedVideoModel,
     videoParams: state.videoParams,
     ...(settings.persistInputOnRestart && (state.appMode === 'gallery' || galleryInputDraft)
       ? {
@@ -840,10 +908,12 @@ interface AppState {
   removeAudioReference: (idx: number) => void
   moveVideoReference: (fromIdx: number, toIdx: number) => void
   moveAudioReference: (fromIdx: number, toIdx: number) => void
-  videoProfiles: VideoProfile[]
-  setVideoProfiles: (profiles: VideoProfile[]) => void
-  activeVideoProfileId: string
-  setActiveVideoProfileId: (id: string) => void
+  videoApiKeys: Record<string, string>
+  setVideoApiKeys: (keys: Record<string, string>) => void
+  selectedVideoModel: string
+  setSelectedVideoModel: (model: string) => void
+
+  // 对话生图 API 配置已简化为 settings.agentApiKey
 
   // 复用图片任务配置
   reusedTaskApiProfileId: string | null
@@ -1209,9 +1279,9 @@ export const useStore = create<AppState>()(
 
         const state = get()
         const settings = normalizeSettings(state.settings)
-        const activeProfile = getActiveApiProfile(settings)
+        const agentApiKey = settings.agentApiKey || settings.apiKey || ''
 
-        if (activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses') {
+        if (agentApiKey.trim()) {
           const galleryInputDraft = saveGalleryInputDraft(state)
           set((state) => ({
             appMode: 'agent',
@@ -1226,26 +1296,13 @@ export const useStore = create<AppState>()(
           return
         }
 
-        if (activeProfile.provider === 'openai' && activeProfile.apiMode !== 'responses') {
-          state.setConfirmDialog({
-            title: '需要 Responses API 配置',
-            message: `当前配置「${activeProfile.name}」使用的是 Images API，仅支持生成图片，无 Agent 模式需要的对话能力。\n\n请前往 API 配置页，将当前配置调整为 Responses API，或切换/新建一个支持 Responses API 的配置。`,
-            confirmText: '去设置',
-            cancelText: '取消',
-            action: () => {
-              useStore.getState().setShowSettings(true, 'api')
-            },
-          })
-          return
-        }
-
         state.setConfirmDialog({
-          title: '配置不支持 Agent 模式',
-          message: `当前配置「${activeProfile.name}」所属的服务商暂不支持 Agent 模式。Agent 模式需要使用支持 Responses API 的 OpenAI 配置。\n\n请前往 API 配置页，切换或新建一个支持 Responses API 的配置。`,
+          title: '需要对话生图配置',
+          message: '请先在设置中配置对话生图的 API Key。',
           confirmText: '去设置',
           cancelText: '取消',
           action: () => {
-            useStore.getState().setShowSettings(true, 'api')
+            useStore.getState().setShowSettings(true, 'agent')
           },
         })
       },
@@ -1255,40 +1312,15 @@ export const useStore = create<AppState>()(
       setSettings: (s) => set((st) => {
         const previous = normalizeSettings(st.settings)
         const incoming = s as Partial<AppSettings>
-        const hasLegacyOverrides =
-          incoming.baseUrl !== undefined ||
-          incoming.apiKey !== undefined ||
-          incoming.model !== undefined ||
-          incoming.timeout !== undefined ||
-          incoming.apiMode !== undefined ||
-          incoming.codexCli !== undefined ||
-          incoming.apiProxy !== undefined ||
-          incoming.streamImages !== undefined ||
-          incoming.streamPartialImages !== undefined
-        const merged = normalizeSettings({ ...previous, ...incoming })
-        if (hasLegacyOverrides && incoming.profiles === undefined) {
-          merged.profiles = merged.profiles.map((profile) =>
-            profile.id === merged.activeProfileId
-              ? {
-                  ...profile,
-                  baseUrl: incoming.baseUrl ?? profile.baseUrl,
-                  apiKey: incoming.apiKey ?? profile.apiKey,
-                  model: incoming.model ?? profile.model,
-                  timeout: incoming.timeout ?? profile.timeout,
-                  apiMode: incoming.apiMode === 'images' || incoming.apiMode === 'responses' ? incoming.apiMode : profile.apiMode,
-                  codexCli: incoming.codexCli ?? profile.codexCli,
-                  apiProxy: incoming.apiProxy ?? profile.apiProxy,
-                  streamImages: incoming.streamImages ?? profile.streamImages,
-                  streamPartialImages: incoming.streamPartialImages ?? profile.streamPartialImages,
-                }
-              : profile,
-          )
-        }
-        const settings = normalizeSettings(merged)
-        const shouldClearReusedProfile = st.reusedTaskApiProfileId && settings.activeProfileId === st.reusedTaskApiProfileId
+        const settings = normalizeSettings({ ...previous, ...incoming })
+        const shouldClearReused = st.reusedTaskApiProfileId && (
+          incoming.galleryApiKey !== undefined ||
+          incoming.agentApiKey !== undefined ||
+          Object.keys(incoming.videoApiKeys ?? {}).length > 0
+        )
         return {
           settings,
-          ...(shouldClearReusedProfile
+          ...(shouldClearReused
             ? { reusedTaskApiProfileId: null, reusedTaskApiProfileName: null, reusedTaskApiProfileMissing: false }
             : {}),
         }
@@ -1651,17 +1683,14 @@ export const useStore = create<AppState>()(
         })
       },
 
-      // Video profiles
-      videoProfiles: [],
-      setVideoProfiles: (videoProfiles) => set((st) => ({
-        videoProfiles,
-        settings: normalizeSettings({ ...st.settings, videoProfiles }),
+      // Video API keys per model
+      videoApiKeys: {},
+      setVideoApiKeys: (videoApiKeys) => set((st) => ({
+        videoApiKeys,
+        settings: { ...st.settings, videoApiKeys },
       })),
-      activeVideoProfileId: '',
-      setActiveVideoProfileId: (activeVideoProfileId) => set((st) => ({
-        activeVideoProfileId,
-        settings: normalizeSettings({ ...st.settings, activeVideoProfileId }),
-      })),
+      selectedVideoModel: DEFAULT_VIDEO_MODEL,
+      setSelectedVideoModel: (selectedVideoModel) => set({ selectedVideoModel }),
 
       // Search & Filter
       searchQuery: '',
@@ -1755,7 +1784,7 @@ export const useStore = create<AppState>()(
     }),
     {
       name: 'ai-link-studio',
-      version: 2,
+      version: 4,
       migrate: (persistedState) => migratePersistedState(persistedState),
       partialize: getPersistedState,
       merge: mergePersistedState,
@@ -1972,49 +2001,35 @@ export function showCodexCliPrompt(force = false, reason = '接口返回的提�
 }
 
 function getFalRecoveryProfile(settings: AppSettings, task: TaskRecord) {
-  const taskProfile = getTaskApiProfile(settings, task)
-  if (taskProfile?.provider === 'fal') return taskProfile
+  if (task.apiProvider !== 'fal') return null
+  // fal recovery is no longer supported without profile system
   return null
 }
 
 function getCustomRecoveryProfile(settings: AppSettings, task: TaskRecord) {
   const provider = task.apiProvider
   if (!provider || provider === 'openai' || provider === 'fal') return null
-  const taskProfile = getTaskApiProfile(settings, task)
-  if (taskProfile?.provider === provider) return taskProfile
+  // Try to find the custom provider and its API key
+  const customProvider = settings.customProviders.find((cp) => cp.id === provider)
+  if (!customProvider) return null
+  // API key would need to come from settings; without profiles, we can't recover it
   return null
 }
 
-export function getTaskApiProfile(settings: AppSettings, task: TaskRecord): ApiProfile | null {
-  const normalized = normalizeSettings(settings)
-  const provider = task.apiProvider
-
-  if (!task.apiProfileId) return null
-
-  const byId = normalized.profiles.find((profile) => profile.id === task.apiProfileId)
-  if (byId && (!provider || byId.provider === provider)) return byId
+export function getTaskApiProfile(_settings: AppSettings, _task: TaskRecord): ApiProfile | null {
+  // Profile-based lookup is no longer supported; tasks use flat key system.
   return null
 }
 
-function createSettingsForApiProfile(settings: AppSettings, profile: ApiProfile): AppSettings {
-  const normalized = normalizeSettings(settings)
-  return normalizeSettings({
-    ...normalized,
-    baseUrl: profile.baseUrl,
-    apiKey: profile.apiKey,
-    model: profile.model,
-    timeout: profile.timeout,
-    apiMode: profile.apiMode,
-    codexCli: profile.codexCli,
-    apiProxy: profile.apiProxy,
-    profiles: normalized.profiles.map((item) => item.id === profile.id ? profile : item),
-    activeProfileId: profile.id,
-  })
+// createSettingsForApiProfile is now a passthrough since settings contain all
+// keys directly; the profile is built on-the-fly via buildGalleryApiProfile etc.
+function createSettingsForApiProfile(settings: AppSettings, _profile: ApiProfile): AppSettings {
+  return settings
 }
 
-function getReusedTaskApiProfile(settings: AppSettings, profileId: string | null): ApiProfile | null {
-  if (!profileId) return null
-  return normalizeSettings(settings).profiles.find((profile) => profile.id === profileId) ?? null
+function getReusedTaskApiProfile(_settings: AppSettings, _profileId: string | null): ApiProfile | null {
+  // Profile-based lookup is no longer supported.
+  return null
 }
 
 function getTaskApiProfileName(task: TaskRecord) {
@@ -2139,9 +2154,10 @@ function scheduleVideoRecoveryFn(taskId: string, delayMs = VIDEO_POLL_INTERVAL_M
 
 function getVideoRecoveryProfile(task: TaskRecord): VideoProfile | null {
   const state = useStore.getState()
-  const profileId = task.videoProfileId ?? state.activeVideoProfileId
-  const profile = (state.videoProfiles ?? []).find((p) => p.id === profileId) ?? null
-  return profile
+  const model = task.videoModel || state.selectedVideoModel || DEFAULT_VIDEO_MODEL
+  const apiKey = state.videoApiKeys?.[model] ?? ''
+  if (!apiKey) return null
+  return buildVideoApiProfile({ ...normalizeSettings(state.settings), videoApiKeys: state.videoApiKeys }, model)
 }
 
 async function recoverVideoTask(taskId: string) {
@@ -2257,11 +2273,13 @@ async function executeVideoTaskFn(taskId: string, profile: VideoProfile) {
         videoTaskIdMap.set(id, patch.volcengineTaskId)
       }
     },
-    onTaskComplete: async (id, videoUrl, coverImageId) => {
+    onTaskComplete: async (id, videoUrl, videoStoreId, coverImageId, revisedPrompt) => {
       const t = useStore.getState().tasks.find((item) => item.id === id)
       updateTaskInStore(id, {
         videoUrl,
+        videoStoreId,
         coverImageId: coverImageId || undefined,
+        revisedPrompt: revisedPrompt || undefined,
         status: 'done',
         volcengineRecoverable: false,
         finishedAt: Date.now(),
@@ -2485,6 +2503,33 @@ export async function initStore() {
     ) {
       scheduleVideoRecoveryFn(task.id, 0)
     }
+    // 恢复已完成视频任务的 blob URL（blob URL 刷新后失效，需重新生成）
+    if (
+      task.taskType === 'video' &&
+      task.status === 'done' &&
+      task.videoStoreId
+    ) {
+      getVideo(task.videoStoreId).then((storedVideo) => {
+        if (storedVideo?.blob) {
+          const restoredVideoUrl = URL.createObjectURL(storedVideo.blob)
+          updateTaskInStore(task.id, { videoUrl: restoredVideoUrl })
+        }
+      }).catch(() => { /* ignore */ })
+    }
+    // 恢复视频封面预览
+    if (
+      task.taskType === 'video' &&
+      task.status === 'done' &&
+      task.coverImageId
+    ) {
+      const coverImageId = task.coverImageId
+      getImage(coverImageId).then((img) => {
+        if (img?.dataUrl) {
+          cacheImage(coverImageId, img.dataUrl)
+          useStore.getState().setTaskVideoCoverPreview(task.id, img.dataUrl)
+        }
+      }).catch(() => { /* ignore */ })
+    }
   }
 
   // 收集所有任务引用的图片 id
@@ -2625,14 +2670,15 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
   const { settings, appMode, prompt, inputImages, maskDraft, params, reusedTaskApiProfileId, reusedTaskApiProfileName, reusedTaskApiProfileMissing, showToast, setConfirmDialog } =
     useStore.getState()
 
+  const normalizedSettings = normalizeSettings(settings)
+
   // 视频模式：直接走视频任务流程，跳过图片 API 校验
   if (appMode === 'video') {
-    const videoProfile = getActiveVideoProfile({
-      videoProfiles: useStore.getState().videoProfiles,
-      activeVideoProfileId: useStore.getState().activeVideoProfileId,
-    } as any)
-    if (!videoProfile || !videoProfile.apiKey) {
-      showToast('请先完善视频 API 配置', 'error')
+    const state = useStore.getState()
+    const model = state.selectedVideoModel || DEFAULT_VIDEO_MODEL
+    const apiKey = state.videoApiKeys?.[model] ?? ''
+    if (!apiKey) {
+      showToast(`请先配置 ${model} 的 API Key`, 'error')
       useStore.getState().setShowSettings(true, 'video')
       return
     }
@@ -2659,9 +2705,9 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
 
     task.taskType = 'video'
-    task.videoProfileId = videoProfile.id
-    task.videoProfileName = videoProfile.name
-    task.videoModel = useStore.getState().videoParams.model || undefined
+    task.videoProfileId = ''
+    task.videoProfileName = model
+    task.videoModel = useStore.getState().videoParams.model || model
     task.videoParams = useStore.getState().videoParams
     task.volcengineRecoverable = false
     useStore.getState().setTasks([task, ...useStore.getState().tasks])
@@ -2674,33 +2720,29 @@ export async function submitTask(options: { allowFullMask?: boolean; useCurrentA
     }
     useStore.getState().setReusedTaskApiProfile(null)
 
+    // 直接使用 store 级别的 videoApiKeys 构建 profile，避免 normalizeSettings 不同步
+    const videoProfile = buildVideoApiProfile({ ...normalizedSettings, videoApiKeys: state.videoApiKeys }, model)
     void executeVideoTaskFn(taskId, videoProfile)
     return
   }
 
-  const normalizedSettings = normalizeSettings(settings)
-  let activeProfile = getActiveApiProfile(settings)
+  let activeProfile = buildGalleryApiProfile(normalizedSettings)
   let requestSettings = createSettingsForApiProfile(normalizedSettings, activeProfile)
   if (normalizedSettings.reuseTaskApiProfileTemporarily && (reusedTaskApiProfileId || reusedTaskApiProfileMissing)) {
-    const reusedProfile = getReusedTaskApiProfile(normalizedSettings, reusedTaskApiProfileId)
-    if (!reusedProfile) {
-      if (options.useCurrentApiProfileWhenReusedMissing) {
-        useStore.getState().setReusedTaskApiProfile(null)
-      } else {
-        setConfirmDialog({
-          title: '找不到 API 配置',
-      message: `找不到复用任务所使用的 API 配置「${reusedTaskApiProfileName || '未知配置'}」，要使用当前的 API 配置「${activeProfile.name}」提交任务吗？`,
-      confirmText: '使用当前配置提交',
-      cancelText: '放弃提交',
-      action: () => {
-        void submitTask({ ...options, useCurrentApiProfileWhenReusedMissing: true })
-      },
-        })
-        return
-      }
+    // Profile-based lookup is no longer supported; use current profile
+    if (options.useCurrentApiProfileWhenReusedMissing) {
+      useStore.getState().setReusedTaskApiProfile(null)
     } else {
-      activeProfile = reusedProfile
-      requestSettings = createSettingsForApiProfile(normalizedSettings, reusedProfile)
+      setConfirmDialog({
+        title: '找不到 API 配置',
+        message: `找不到复用任务所使用的 API 配置「${reusedTaskApiProfileName || '未知配置'}」，要使用当前的 API 配置「${activeProfile.name}」提交任务吗？`,
+        confirmText: '使用当前配置提交',
+        cancelText: '放弃提交',
+        action: () => {
+          void submitTask({ ...options, useCurrentApiProfileWhenReusedMissing: true })
+        },
+      })
+      return
     }
   }
 
@@ -3111,6 +3153,7 @@ function addTaskReferencedImageIds(target: Set<string>, task: TaskRecord) {
   if (task.maskImageId) target.add(task.maskImageId)
   for (const id of task.outputImages || []) target.add(id)
   for (const id of task.streamPartialImageIds || []) target.add(id)
+  if (task.coverImageId) target.add(task.coverImageId)
 }
 
 async function deleteUnreferencedImageIds(imageIds: Iterable<string>) {
@@ -3499,7 +3542,7 @@ export async function submitAgentMessage() {
   const state = useStore.getState()
   const { settings, prompt, inputImages, maskDraft, params, showToast } = state
   const normalizedSettings = normalizeSettings(settings)
-  const activeProfile = getActiveApiProfile(normalizedSettings)
+  const activeProfile = buildAgentApiProfile(normalizedSettings)
 
   if (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses') {
     state.setAppMode('agent')
@@ -3649,7 +3692,7 @@ export async function regenerateAgentAssistantMessage(conversationId: string, ro
   const state = useStore.getState()
   const { settings, params, showToast } = state
   const normalizedSettings = normalizeSettings(settings)
-  const activeProfile = getActiveApiProfile(normalizedSettings)
+  const activeProfile = buildAgentApiProfile(normalizedSettings)
 
   if (activeProfile.provider !== 'openai' || activeProfile.apiMode !== 'responses') {
     state.setAppMode('agent')
@@ -4377,17 +4420,9 @@ async function executeTask(taskId: string) {
   if (!task) return
   const taskProfile = getTaskApiProfile(settings, task)
   if (!taskProfile && task.apiProfileId) {
-    updateTaskInStore(taskId, {
-      status: 'error',
-      error: '找不到此任务所使用的 API 配置。',
-      falRecoverable: false,
-      customRecoverable: false,
-      finishedAt: Date.now(),
-      elapsed: Date.now() - task.createdAt,
-    })
-    return
+    // Profile-based lookup is no longer supported; fall back to gallery profile
   }
-  const activeProfile = taskProfile ?? getActiveApiProfile(settings)
+  const activeProfile = taskProfile ?? buildGalleryApiProfile(normalizeSettings(settings))
   const requestSettings = createSettingsForApiProfile(settings, activeProfile)
   const taskProvider = task.apiProvider ?? activeProfile.provider
   let falRequestInfo: { requestId: string; endpoint: string } | null = task.falRequestId && task.falEndpoint
@@ -4772,7 +4807,7 @@ export async function deleteFavoriteCollection(collectionId: string, deleteTasks
 /** 重试失败的任务：创建新任务并执行 */
 export async function retryTask(task: TaskRecord) {
   const { settings } = useStore.getState()
-  const activeProfile = getActiveApiProfile(settings)
+  const activeProfile = buildGalleryApiProfile(normalizeSettings(settings))
   const normalizedParams = normalizeParamsForSettings(task.params, settings, { hasInputImages: task.inputImageIds.length > 0 })
   const taskId = genId()
   const newTask: TaskRecord = {
@@ -4804,11 +4839,11 @@ export async function retryTask(task: TaskRecord) {
 
 /** 重试视频任务：使用相同参数重新生成 */
 export async function retryVideoTask(task: TaskRecord) {
-  const { settings, videoProfiles, activeVideoProfileId } = useStore.getState()
-  const videoProfile = videoProfiles?.find((p) => p.id === task.videoProfileId)
-    || videoProfiles?.find((p) => p.id === activeVideoProfileId)
-  if (!videoProfile || !videoProfile.apiKey) {
-    useStore.getState().showToast('请先完善视频 API 配置', 'error')
+  const { settings, videoApiKeys, selectedVideoModel } = useStore.getState()
+  const model = task.videoModel || selectedVideoModel || DEFAULT_VIDEO_MODEL
+  const apiKey = videoApiKeys?.[model] ?? ''
+  if (!apiKey) {
+    useStore.getState().showToast(`请先配置 ${model} 的 API Key`, 'error')
     useStore.getState().setShowSettings(true, 'video')
     return
   }
@@ -4826,9 +4861,9 @@ export async function retryVideoTask(task: TaskRecord) {
     finishedAt: null,
     elapsed: null,
     taskType: 'video',
-    videoProfileId: videoProfile.id,
-    videoProfileName: videoProfile.name,
-    videoModel: useStore.getState().videoParams.model || undefined,
+    videoProfileId: '',
+    videoProfileName: model,
+    videoModel: useStore.getState().videoParams.model || model,
     videoParams: task.videoParams,
     volcengineRecoverable: false,
   }
@@ -4838,7 +4873,7 @@ export async function retryVideoTask(task: TaskRecord) {
   await putTask(newTask)
   useStore.getState().showToast('视频任务已重新提交', 'success')
 
-  void executeVideoTaskFn(taskId, videoProfile)
+  void executeVideoTaskFn(taskId, buildVideoApiProfile({ ...normalizeSettings(settings), videoApiKeys }, model))
 }
 
 /** 复用配置 */
@@ -4846,16 +4881,18 @@ export async function reuseConfig(task: TaskRecord) {
   const { settings, setPrompt, setParams, setInputImages, setMaskDraft, clearMaskDraft, showToast, setConfirmDialog, setReusedTaskApiProfile } = useStore.getState()
   const normalizedSettings = normalizeSettings(settings)
   const currentProfile = getActiveApiProfile(settings)
-  const matchedProfile = normalizedSettings.reuseTaskApiProfileTemporarily ? getTaskApiProfile(normalizedSettings, task) : null
-  const shouldTemporarilyReuseProfile = Boolean(matchedProfile && matchedProfile.id !== currentProfile.id)
-  const missingReusedProfile = normalizedSettings.reuseTaskApiProfileTemporarily && !matchedProfile
-  const taskProfileName = matchedProfile?.name ?? getTaskApiProfileName(task)
-  const paramsSettings = shouldTemporarilyReuseProfile && matchedProfile ? createSettingsForApiProfile(normalizedSettings, matchedProfile) : normalizedSettings
+  const taskProfileName = task.apiProfileName || task.apiModel || '未知配置'
 
-  setParams(normalizeParamsForSettings(task.params, paramsSettings, { hasInputImages: task.inputImageIds.length > 0 }))
+  // Check if the task used a different provider than the current active profile
+  const differentProvider = task.apiProvider && task.apiProvider !== currentProfile.provider
+
+  setParams(normalizeParamsForSettings(task.params, normalizedSettings, { hasInputImages: task.inputImageIds.length > 0 }))
+
+  // Since profile-based lookup is no longer supported, different-provider tasks
+  // always show a confirm dialog asking whether to submit with current profile
   setReusedTaskApiProfile(
-    shouldTemporarilyReuseProfile && matchedProfile ? matchedProfile.id : null,
-    missingReusedProfile,
+    differentProvider && normalizedSettings.reuseTaskApiProfileTemporarily ? (task.apiProfileId ?? null) : null,
+    Boolean(differentProvider && normalizedSettings.reuseTaskApiProfileTemporarily),
     taskProfileName,
   )
   clearMaskDraft()
@@ -4885,7 +4922,9 @@ export async function reuseConfig(task: TaskRecord) {
   } else {
     clearMaskDraft()
   }
-  if (missingReusedProfile) {
+
+  // Different provider tasks always prompt for confirmation since profiles can't be recovered
+  if (differentProvider && normalizedSettings.reuseTaskApiProfileTemporarily) {
     setConfirmDialog({
       title: '找不到 API 配置',
       message: `找不到复用任务所使用的 API 配置「${taskProfileName}」，要使用当前的 API 配置「${currentProfile.name}」提交任务吗？`,
@@ -4898,12 +4937,7 @@ export async function reuseConfig(task: TaskRecord) {
     return
   }
 
-  showToast(
-    shouldTemporarilyReuseProfile && matchedProfile
-      ? `已临时复用该任务的 API 配置「${matchedProfile.name}」`
-      : '已复用配置到输入框',
-    'success',
-  )
+  showToast('已复用配置到输入框', 'success')
 }
 
 /** 编辑输出：将输出图加入输入 */
@@ -5008,6 +5042,14 @@ export async function removeTask(task: TaskRecord) {
     }
   }
 
+  // 删除孤立视频 blob
+  if (task.videoStoreId) {
+    const stillHasVideo = remaining.some((t) => t.videoStoreId === task.videoStoreId)
+    if (!stillHasVideo) {
+      await deleteVideo(task.videoStoreId)
+    }
+  }
+
   showToast('任务已删除', 'success')
 }
 
@@ -5025,6 +5067,7 @@ export async function clearData(options: ClearOptions = { clearConfig: true, cle
     await dbClearTasks()
     await dbClearAgentConversations()
     await clearImages()
+    await clearVideos()
     imageCache.clear()
     thumbnailCache.clear()
     thumbnailBackfillIds.clear()
@@ -5141,7 +5184,7 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
   try {
     const tasks = options.exportTasks ? await getAllTasks() : []
     const images = options.exportTasks ? await getAllImages() : []
-    const { settings, agentConversations, favoriteCollections, defaultFavoriteCollectionId } = useStore.getState()
+    const { settings, agentConversations, favoriteCollections, defaultFavoriteCollectionId, videoParams, videoMode } = useStore.getState()
     const exportedAt = Date.now()
     const imageCreatedAtFallback = new Map<string, number>()
 
@@ -5163,6 +5206,7 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
 
     const imageFiles: ExportData['imageFiles'] = {}
     const thumbnailFiles: NonNullable<ExportData['thumbnailFiles']> = {}
+    const videoFiles: ExportData['videoFiles'] = {}
     const zipFiles: Record<string, Uint8Array | [Uint8Array, { mtime: Date }]> = {}
 
     if (options.exportTasks) {
@@ -5200,14 +5244,35 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
           })
         }
       }
+
+      // 导出视频
+      const videoIds = await getAllVideoIds()
+      for (const videoId of videoIds) {
+        const storedVideo = await getVideo(videoId)
+        if (storedVideo?.blob) {
+          const ext = storedVideo.mimeType ? storedVideo.mimeType.split('/')[1] || 'mp4' : 'mp4'
+          const path = `videos/${videoId}.${ext}`
+          const videoBytes = new Uint8Array(await storedVideo.blob.arrayBuffer())
+          videoFiles[videoId] = {
+            path,
+            mimeType: storedVideo.mimeType,
+            storedAt: storedVideo.storedAt,
+          }
+          zipFiles[path] = [videoBytes, { mtime: new Date(storedVideo.storedAt ?? exportedAt) }]
+        }
+      }
     }
 
     const manifest: ExportData = {
-      version: 3,
+      version: 5,
       exportedAt: new Date(exportedAt).toISOString(),
     }
 
-    if (options.exportConfig) manifest.settings = settings
+    if (options.exportConfig) {
+      manifest.settings = settings
+      manifest.videoParams = videoParams
+      manifest.videoMode = videoMode
+    }
     if (options.exportTasks) {
       manifest.tasks = tasks
       manifest.favoriteCollections = favoriteCollections
@@ -5215,6 +5280,9 @@ export async function exportData(options: ExportOptions = { exportConfig: true, 
       manifest.agentConversations = getPersistableAgentConversations(agentConversations)
       manifest.imageFiles = imageFiles
       manifest.thumbnailFiles = thumbnailFiles
+      if (Object.keys(videoFiles).length > 0) {
+        manifest.videoFiles = videoFiles
+      }
     }
 
     zipFiles['manifest.json'] = [strToU8(JSON.stringify(manifest, null, 2)), { mtime: new Date(exportedAt) }]
@@ -5297,6 +5365,18 @@ export async function importData(file: File, options: ImportOptions = { importCo
         await putTask(task)
       }
 
+      // 还原视频
+      if (data.videoFiles) {
+        for (const [id, info] of Object.entries(data.videoFiles)) {
+          const bytes = unzipped[info.path]
+          if (!bytes) continue
+          const mimeType = info.mimeType || 'video/mp4'
+          const ab = bytes.buffer.slice(bytes.byteOffset, bytes.byteOffset + bytes.byteLength) as ArrayBuffer
+          const blob = new Blob([ab], { type: mimeType })
+          await storeVideo(id, blob)
+        }
+      }
+
       const tasks = await getAllTasks()
       const state = useStore.getState()
       const importedCollections = normalizeFavoriteCollections(data.favoriteCollections)
@@ -5313,6 +5393,18 @@ export async function importData(file: File, options: ImportOptions = { importCo
         defaultFavoriteCollectionId: normalizedFavorites.defaultFavoriteCollectionId,
       })
       if (normalizedFavorites.changed) await Promise.all(normalizedFavorites.tasks.map((task) => putTask(task)))
+
+      // 恢复导入任务的视频 URL（blob URL 刷新后失效，需重新生成）
+      for (const task of normalizedFavorites.tasks) {
+        if (task.taskType === 'video' && task.status === 'done' && task.videoStoreId) {
+          const storedVideo = await getVideo(task.videoStoreId)
+          if (storedVideo?.blob) {
+            const restoredVideoUrl = URL.createObjectURL(storedVideo.blob)
+            updateTaskInStore(task.id, { videoUrl: restoredVideoUrl })
+          }
+        }
+      }
+
       const importedAgentConversations = normalizeAgentConversations(data.agentConversations)
         .filter((conversation) => !isEmptyAgentConversation(conversation))
       useStore.setState((state) => {
@@ -5333,6 +5425,24 @@ export async function importData(file: File, options: ImportOptions = { importCo
     if (options.importConfig && data.settings) {
       const state = useStore.getState()
       state.setSettings(mergeImportedSettings(state.settings, data.settings))
+      const importedVideoParams = data.videoParams && typeof data.videoParams === 'object'
+        ? {
+            resolution: ['480p', '720p', '1080p'].includes(data.videoParams.resolution) ? data.videoParams.resolution : DEFAULT_VIDEO_PARAMS.resolution,
+            duration: typeof data.videoParams.duration === 'number' ? data.videoParams.duration : DEFAULT_VIDEO_PARAMS.duration,
+            ratio: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'].includes(data.videoParams.ratio) ? data.videoParams.ratio : DEFAULT_VIDEO_PARAMS.ratio,
+            seed: typeof data.videoParams.seed === 'number' ? data.videoParams.seed : undefined,
+            generateAudio: typeof data.videoParams.generateAudio === 'boolean' ? data.videoParams.generateAudio : undefined,
+            klingMode: data.videoParams.klingMode === 'std' || data.videoParams.klingMode === 'pro' ? data.videoParams.klingMode : undefined,
+            grokSeconds: data.videoParams.grokSeconds === 6 || data.videoParams.grokSeconds === 10 || data.videoParams.grokSeconds === 15 ? data.videoParams.grokSeconds : undefined,
+          }
+        : undefined
+      const importedVideoMode = data.videoMode === 'image' || data.videoMode === 'multi' || data.videoMode === 'text'
+        ? data.videoMode
+        : undefined
+      useStore.setState((s) => ({
+        videoParams: importedVideoParams ?? s.videoParams,
+        videoMode: importedVideoMode ?? s.videoMode,
+      }))
     }
 
     let msg = '数据已成功导入'

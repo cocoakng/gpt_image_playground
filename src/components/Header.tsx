@@ -20,10 +20,17 @@ function isInstalledPwa() {
   return window.matchMedia('(display-mode: standalone)').matches || nav.standalone === true
 }
 
+const APP_MODE_TITLES: Record<string, string> = {
+  gallery: 'AI Link Image',
+  agent: 'AI Link Agent',
+  video: 'AI Link Video',
+}
+
 export default function Header() {
   const appMode = useStore((s) => s.appMode)
   const setAppMode = useStore((s) => s.setAppMode)
   const setShowSettings = useStore((s) => s.setShowSettings)
+  const agentApiKey = useStore((s) => s.settings.agentApiKey)
   const setConfirmDialog = useStore((s) => s.setConfirmDialog)
   const agentMobileHeaderVisible = useStore((s) => s.agentMobileHeaderVisible)
   const setAgentMobileHeaderVisible = useStore((s) => s.setAgentMobileHeaderVisible)
@@ -45,6 +52,15 @@ export default function Header() {
   const [showHistoryModal, setShowHistoryModal] = useState(false)
   const historyButtonRef = useRef<HTMLButtonElement>(null)
   const createConversation = useStore((s) => s.createAgentConversation)
+
+  const handleSwitchToAgent = () => {
+    const isConfigured = agentApiKey.length >= 10
+    if (!isConfigured) {
+      setShowSettings(true, 'agent')
+      return
+    }
+    setAppMode('agent')
+  }
 
   useEffect(() => {
     if (appMode === 'agent') {
@@ -163,7 +179,7 @@ export default function Header() {
                     rel="noopener noreferrer"
                     className="hidden text-lg font-bold tracking-tight text-gray-800 transition-colors hover:text-gray-600 dark:text-gray-100 dark:hover:text-gray-300 sm:inline"
                   >
-                    AI Link Image
+                    {APP_MODE_TITLES[appMode] || 'AI Link Image'}
                   </a>
                 </>
               ) : (
@@ -174,7 +190,7 @@ export default function Header() {
                   className="inline-flex items-center gap-2 text-[17px] sm:text-lg font-bold tracking-tight text-gray-800 dark:text-gray-100 hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
                 >
                   <img src={logoUrl} alt="Logo" className="h-6 w-6 sm:h-7 sm:w-7 object-contain" draggable={false} />
-                  <span>AI Link Image</span>
+                  <span>{APP_MODE_TITLES[appMode] || 'AI Link Image'}</span>
                 </a>
               )}
               {hasUpdate && latestRelease && (
@@ -250,10 +266,10 @@ export default function Header() {
             </button>
             <button
               type="button"
-              onClick={() => setAppMode('agent')}
+              onClick={handleSwitchToAgent}
               className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${appMode === 'agent' ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm font-medium' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}`}
             >
-              Agent
+              对话生图
             </button>
             <button
               type="button"
@@ -330,10 +346,10 @@ export default function Header() {
             </button>
             <button
               type="button"
-              onClick={() => setAppMode('agent')}
+              onClick={handleSwitchToAgent}
               className={`px-4 py-1.5 rounded-lg text-sm transition-colors ${appMode === 'agent' ? 'bg-white dark:bg-white/10 text-gray-900 dark:text-white shadow-sm font-medium' : 'text-gray-500 hover:text-gray-800 dark:hover:text-gray-200'}`}
             >
-              Agent
+              对话生图
             </button>
             <button
               type="button"

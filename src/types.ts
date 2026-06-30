@@ -90,6 +90,8 @@ export interface VideoProfile {
   apiKey: string
   timeout: number
   notes?: string
+  /** 视频模型 ID */
+  model?: string
 }
 
 export interface AppSettings {
@@ -103,6 +105,10 @@ export interface AppSettings {
   apiProxy: boolean
   streamImages?: boolean
   streamPartialImages?: number
+  /** 各模式独立 API Key */
+  galleryApiKey: string
+  agentApiKey: string
+  videoApiKey: string
   customProviders: CustomProviderDefinition[]
   providerOrder?: string[]
   clearInputAfterSubmit: boolean
@@ -116,10 +122,8 @@ export interface AppSettings {
   agentScrollToBottomAfterSubmit: boolean
   agentMaxToolRounds: number
   agentWebSearch: boolean
-  profiles: ApiProfile[]
-  activeProfileId: string
-  videoProfiles: VideoProfile[]
-  activeVideoProfileId: string
+  videoApiKeys: Record<string, string>
+  selectedVideoModel: string
 }
 
 // ===== 任务参数 =====
@@ -144,8 +148,15 @@ export const DEFAULT_PARAMS: TaskParams = {
 
 // ===== 视频参数 =====
 
-/** Seedance 2.0 支持的模型 ID */
-export type VideoModel = 'seedance-2.0-260128' | 'seedance-2.0-fast-260128' | 'seedance-1.5-pro' | string
+/** 官方支持的视频模型 */
+export type VideoModel =
+  | 'kling-v3'
+  | 'viduq3'
+  | 'grok-video-3'
+  | 'doubao-seedance-2-0-260128'
+  | 'doubao-seedance-2-0-fast-260128'
+  | 'happyhorse-1.0'
+  | string
 
 export interface VideoParams {
   /** 生成模型 */
@@ -155,14 +166,12 @@ export interface VideoParams {
   ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '21:9' | 'adaptive'
   /** 随机种子，用于可重复生成 */
   seed?: number
-  /** 是否添加水印 */
-  watermark?: boolean
   /** 是否自动生成音频（音画同步） */
   generateAudio?: boolean
-  /** 是否固定镜头 */
-  cameraFixed?: boolean
-  /** 是否返回尾帧图片 */
-  returnLastFrame?: boolean
+  /** Kling V3 生成模式 */
+  klingMode?: 'std' | 'pro'
+  /** Grok 视频时长 */
+  grokSeconds?: 6 | 10 | 15
 }
 
 export const DEFAULT_VIDEO_PARAMS: VideoParams = {
@@ -259,6 +268,8 @@ export interface TaskRecord {
   volcengineRecoverable?: boolean
   /** 视频平台返回的详细任务状态，如 submitted/queued/running/succeed/failed */
   videoStatus?: string
+  /** 视频生成进度百分比 (0-100) */
+  videoProgress?: number
   /** 任务类型：image 或 video */
   taskType?: 'image' | 'video'
   /** 生成视频时使用的视频配置 ID */
@@ -269,8 +280,12 @@ export interface TaskRecord {
   videoModel?: string
   /** 视频 URL（不持久化，仅缓存，24h 过期） */
   videoUrl?: string
+  /** 视频 Blob 在 IndexedDB videos store 中的 id */
+  videoStoreId?: string
   /** 封面图在 IndexedDB 中的 id */
   coverImageId?: string
+  /** 视频任务 API 返回的优化提示词 */
+  revisedPrompt?: string
   /** 视频参数 */
   videoParams?: VideoParams
   /** API 返回的实际生效参数，用于标记与请求值不一致的情况 */
@@ -519,6 +534,8 @@ export interface ExportData {
   version: number
   exportedAt: string
   settings?: AppSettings
+  videoParams?: VideoParams
+  videoMode?: VideoMode
   tasks?: TaskRecord[]
   favoriteCollections?: FavoriteCollection[]
   defaultFavoriteCollectionId?: string | null
@@ -537,5 +554,11 @@ export interface ExportData {
     width?: number
     height?: number
     thumbnailVersion?: number
+  }>
+  /** videoStoreId → 视频文件信息 */
+  videoFiles?: Record<string, {
+    path: string
+    mimeType?: string
+    storedAt?: number
   }>
 }

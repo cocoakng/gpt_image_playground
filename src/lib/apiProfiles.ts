@@ -44,6 +44,14 @@ export const DEFAULT_VIDEO_PARAMS: VideoParams = {
 
 export const DEFAULT_VIDEO_PROFILE_ID = 'default-video'
 export const DEFAULT_VIDEO_BASE_URL = 'https://www.ai-link.shop/v1'
+export const DEFAULT_VIDEO_MODEL = 'doubao-seedance-2-0-fast-260128'
+
+// 各模式独立 API Key 对应的默认参数
+export const GALLERY_DEFAULT_BASE_URL = DEFAULT_BASE_URL
+export const GALLERY_DEFAULT_MODEL = DEFAULT_IMAGES_MODEL
+export const AGENT_DEFAULT_BASE_URL = DEFAULT_BASE_URL
+export const AGENT_DEFAULT_MODEL = DEFAULT_RESPONSES_MODEL
+export const VIDEO_DEFAULT_TIMEOUT = DEFAULT_API_TIMEOUT
 
 export function normalizeVideoProfile(input: unknown, fallback?: Partial<VideoProfile>): VideoProfile {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
@@ -54,23 +62,29 @@ export function normalizeVideoProfile(input: unknown, fallback?: Partial<VideoPr
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : fallback?.apiKey ?? '',
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : fallback?.timeout ?? DEFAULT_API_TIMEOUT,
     notes: typeof record.notes === 'string' ? record.notes : fallback?.notes ?? '',
+    model: typeof record.model === 'string' && record.model.trim() ? record.model : fallback?.model ?? undefined,
   }
 }
 
 export function createDefaultVideoProfile(overrides: Partial<VideoProfile> = {}): VideoProfile {
+  const model = overrides.model ?? DEFAULT_VIDEO_MODEL
   return {
     id: DEFAULT_VIDEO_PROFILE_ID,
-    name: '视频配置',
+    name: model,
     baseUrl: DEFAULT_VIDEO_BASE_URL,
     apiKey: '',
     timeout: DEFAULT_API_TIMEOUT,
     notes: '',
+    model,
     ...overrides,
   }
 }
 
 export function getActiveVideoProfile(settings: AppSettings): VideoProfile | null {
-  return settings.videoProfiles?.find((p) => p.id === settings.activeVideoProfileId) ?? null
+  const model = settings.selectedVideoModel || DEFAULT_VIDEO_MODEL
+  const apiKey = settings.videoApiKeys?.[model] ?? ''
+  if (!apiKey) return null
+  return buildVideoApiProfile(settings, model)
 }
 
 export function validateVideoProfile(profile: VideoProfile): string | null {
@@ -525,7 +539,8 @@ function validateImportedProfileRecord(input: unknown) {
 export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSettings {
   const record = input && typeof input === 'object' ? input as Record<string, unknown> : {}
   const customProviders = normalizeCustomProviderDefinitions(record.customProviders)
-  const customProviderIds = new Set(customProviders.map((provider) => provider.id))
+
+  // 旧 profiles 兼容：提取 galleryApiKey
   const legacyProfile = createDefaultOpenAIProfile({
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : DEFAULT_BASE_URL,
     apiKey: typeof record.apiKey === 'string' ? record.apiKey : '',
@@ -539,19 +554,61 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     streamPartialImages: normalizeStreamPartialImages(record.streamPartialImages),
   })
   const profiles = Array.isArray(record.profiles) && record.profiles.length
-    ? record.profiles.map((profile) => normalizeApiProfile(profile, undefined, customProviderIds))
+    ? record.profiles.map((profile) => normalizeApiProfile(profile))
     : [legacyProfile]
   const activeProfileId = typeof record.activeProfileId === 'string' && profiles.some((p) => p.id === record.activeProfileId)
     ? record.activeProfileId
     : profiles[0].id
   const active = profiles.find((p) => p.id === activeProfileId) ?? profiles[0]
 
+  // 旧 videoProfiles 兼容：提取 videoApiKeys
   const activeVideoProfiles = Array.isArray(record.videoProfiles) && record.videoProfiles.length
     ? record.videoProfiles.map((profile) => normalizeVideoProfile(profile))
     : [] as VideoProfile[]
   const activeVideoProfileId = typeof record.activeVideoProfileId === 'string' && activeVideoProfiles.some((p) => p.id === record.activeVideoProfileId)
     ? record.activeVideoProfileId
     : activeVideoProfiles[0]?.id ?? ''
+
+  // 旧 agentProfiles 兼容：提取 agentApiKey
+  const agentProfiles = Array.isArray(record.agentProfiles) && record.agentProfiles.length
+    ? record.agentProfiles.map((profile) => normalizeApiProfile({ ...profile, apiMode: 'responses' }))
+    : [] as ApiProfile[]
+  const activeAgentProfileId = typeof record.activeAgentProfileId === 'string' && agentProfiles.some((p) => p.id === record.activeAgentProfileId)
+    ? record.activeAgentProfileId
+    : agentProfiles[0]?.id ?? ''
+  const activeAgentProfile = agentProfiles.find((p) => p.id === activeAgentProfileId)
+
+  // 从旧 profile 迁移到新的独立 key 结构
+  const galleryApiKey = typeof record.galleryApiKey === 'string' ? record.galleryApiKey
+    : (active.apiMode === 'images' ? active.apiKey : '')
+  const agentApiKey = typeof record.agentApiKey === 'string' ? record.agentApiKey
+    : (activeAgentProfile?.apiKey ?? (active.apiMode === 'responses' ? active.apiKey : ''))
+
+  const videoApiKeys: Record<string, string> = {}
+  if (Array.isArray(record.videoProfiles) && record.videoProfiles.length) {
+    for (const vp of activeVideoProfiles) {
+      if (vp.model && vp.apiKey) {
+        videoApiKeys[vp.model] = vp.apiKey
+      }
+    }
+  }
+  // 兼容旧 videoApiKey fallback
+  if (Object.keys(videoApiKeys).length === 0) {
+    const fallbackKey = typeof record.videoApiKey === 'string' ? record.videoApiKey : ''
+    if (fallbackKey) {
+      videoApiKeys[DEFAULT_VIDEO_MODEL] = fallbackKey
+    }
+  }
+  // 直接使用新的 videoApiKeys 字段（如果迁移后仍为空）
+  if (Object.keys(videoApiKeys).length === 0 && record.videoApiKeys && typeof record.videoApiKeys === 'object') {
+    for (const [model, key] of Object.entries(record.videoApiKeys as Record<string, string>)) {
+      if (typeof key === 'string' && key) {
+        videoApiKeys[model] = key
+      }
+    }
+  }
+  const selectedVideoModel = typeof record.selectedVideoModel === 'string' ? record.selectedVideoModel
+    : (activeVideoProfiles.find((p) => p.id === activeVideoProfileId)?.model ?? DEFAULT_VIDEO_MODEL)
 
   return {
     baseUrl: active.baseUrl,
@@ -576,10 +633,59 @@ export function normalizeSettings(input: Partial<AppSettings> | unknown): AppSet
     agentScrollToBottomAfterSubmit: typeof record.agentScrollToBottomAfterSubmit === 'boolean' ? record.agentScrollToBottomAfterSubmit : true,
     agentMaxToolRounds: normalizeAgentMaxToolRounds(record.agentMaxToolRounds),
     agentWebSearch: typeof record.agentWebSearch === 'boolean' ? record.agentWebSearch : false,
-    profiles,
-    activeProfileId,
-    videoProfiles: activeVideoProfiles,
-    activeVideoProfileId,
+    videoApiKeys,
+    selectedVideoModel,
+    galleryApiKey,
+    agentApiKey,
+    videoApiKey: '',
+  }
+}
+
+/** 获取画廊模式 API Key */
+export function getGalleryApiKey(settings: AppSettings): string {
+  return settings.galleryApiKey || settings.apiKey || ''
+}
+
+/** 获取对话生图模式 API Key */
+export function getAgentApiKey(settings: AppSettings): string {
+  return settings.agentApiKey || settings.apiKey || ''
+}
+
+/** 获取视频生成模式 API Key（按模型独立） */
+export function getVideoApiKey(settings: AppSettings, model: string): string {
+  return settings.videoApiKeys?.[model] ?? settings.videoApiKey ?? ''
+}
+
+/** 构建画廊模式临时 ApiProfile */
+export function buildGalleryApiProfile(settings: AppSettings): ApiProfile {
+  return {
+    ...createDefaultOpenAIProfile({
+      apiKey: getGalleryApiKey(settings),
+      apiMode: 'images',
+    }),
+    baseUrl: settings.baseUrl || GALLERY_DEFAULT_BASE_URL,
+  }
+}
+
+/** 构建对话生图模式临时 ApiProfile */
+export function buildAgentApiProfile(settings: AppSettings): ApiProfile {
+  return {
+    ...createDefaultOpenAIProfile({
+      apiKey: getAgentApiKey(settings),
+      model: AGENT_DEFAULT_MODEL,
+      apiMode: 'responses',
+    }),
+    baseUrl: settings.baseUrl || AGENT_DEFAULT_BASE_URL,
+  }
+}
+
+/** 构建视频模式临时 VideoProfile */
+export function buildVideoApiProfile(settings: AppSettings, model?: string): VideoProfile {
+  const m = model || settings.selectedVideoModel || DEFAULT_VIDEO_MODEL
+  return {
+    ...createDefaultVideoProfile(),
+    model: m,
+    apiKey: getVideoApiKey(settings, m),
   }
 }
 
@@ -662,12 +768,11 @@ export function importCustomProviderDefinitionFromJson(jsonText: string, existin
 export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): ApiProfile {
   const record = settings && typeof settings === 'object' ? settings as Record<string, unknown> : {}
   const normalized = normalizeSettings(settings)
-  const profile = normalized.profiles.find((p) => p.id === normalized.activeProfileId) ?? normalized.profiles[0] ?? createDefaultOpenAIProfile()
-
+  const profile = buildGalleryApiProfile(normalized)
   return {
     ...profile,
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : profile.baseUrl,
-    apiKey: typeof record.apiKey === 'string' ? record.apiKey : profile.apiKey,
+    apiKey: profile.apiKey,
     model: typeof record.model === 'string' && record.model.trim() ? record.model : profile.model,
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : profile.timeout,
     apiMode: record.apiMode === 'images' || record.apiMode === 'responses' ? record.apiMode : profile.apiMode,
@@ -699,13 +804,6 @@ function isDefaultOpenAIProfile(profile: ApiProfile): boolean {
     profile.apiProxy === DEFAULT_OPENAI_API_PROXY &&
     profile.streamImages === false &&
     profile.streamPartialImages === DEFAULT_STREAM_PARTIAL_IMAGES
-}
-
-function hasOnlyDefaultProfiles(settings: AppSettings): boolean {
-  return settings.customProviders.length === 0 &&
-    settings.profiles.length === 1 &&
-    settings.activeProfileId === DEFAULT_OPENAI_PROFILE_ID &&
-    isDefaultOpenAIProfile(settings.profiles[0])
 }
 
 function createImportedProfileId(provider: ApiProvider, usedIds: Set<string>): string {
@@ -795,53 +893,33 @@ export function findEquivalentApiProfile(
   importedProfile: ApiProfile,
   importedProviders: CustomProviderDefinition[] = [],
 ): ApiProfile | null {
-  const normalized = normalizeSettings(settings)
-  const importedProvider = importedProviders.find((provider) => provider.id === importedProfile.provider)
-  const provider = importedProvider
-    ? normalized.customProviders.find((provider) => getCustomProviderDedupKey(provider) === getCustomProviderDedupKey(importedProvider))?.id ?? importedProfile.provider
-    : importedProfile.provider
-  const profile = { ...importedProfile, provider }
-  const dedupKey = getApiProfileDedupKey(profile)
-  const exact = normalized.profiles.find((item) => getApiProfileDedupKey(item) === dedupKey)
-  if (exact) return exact
-
-  if (profile.apiKey.trim()) return null
-  const connectionKey = getApiProfileConnectionKey(profile)
-  return normalized.profiles.find((item) => getApiProfileConnectionKey(item) === connectionKey) ?? null
+  // Simplified: no longer matching profiles, return null
+  return null
 }
 
 export function mergeImportedSettings(currentSettings: Partial<AppSettings> | unknown, importedSettings: Partial<AppSettings> | unknown): AppSettings {
   const current = normalizeSettings(currentSettings)
   const normalizedImported = normalizeSettings(importedSettings)
-  const imported = normalizeSettings({
-    ...normalizedImported,
-    profiles: dedupeApiProfiles(normalizedImported.profiles),
-  })
 
-  if (hasOnlyDefaultProfiles(current)) {
-    return imported
+  // Merge customProviders
+  const allCustomProviders = [...current.customProviders]
+  for (const imported of normalizedImported.customProviders) {
+    const existingIdx = allCustomProviders.findIndex(p => p.id === imported.id)
+    if (existingIdx >= 0) {
+      allCustomProviders[existingIdx] = imported
+    } else {
+      allCustomProviders.push(imported)
+    }
   }
 
-  const usedIds = new Set(current.profiles.map((profile) => profile.id))
-  const existingKeys = new Set(current.profiles.map(getApiProfileDedupKey))
-  const { providers: customProviders, providerIdMap } = mergeImportedCustomProviders(current.customProviders, imported.customProviders)
-  const importedProfiles = imported.profiles
-    .map((profile) => providerIdMap.has(profile.provider)
-      ? { ...profile, provider: providerIdMap.get(profile.provider) ?? profile.provider }
-      : profile,
-    )
-    .filter((profile) => !existingKeys.has(getApiProfileDedupKey(profile)) && !hasEquivalentApiProfile(current.profiles, profile))
-    .map((profile) => ({
-      ...profile,
-      id: createImportedProfileId(profile.provider, usedIds),
-    }))
-  const profiles = [...current.profiles, ...importedProfiles]
-
+  // Merge API keys: use imported keys if current is empty
   return normalizeSettings({
     ...current,
-    customProviders,
-    profiles,
-    activeProfileId: current.activeProfileId,
+    customProviders: allCustomProviders,
+    galleryApiKey: current.galleryApiKey || normalizedImported.galleryApiKey,
+    agentApiKey: current.agentApiKey || normalizedImported.agentApiKey,
+    videoApiKeys: { ...current.videoApiKeys, ...normalizedImported.videoApiKeys },
+    selectedVideoModel: normalizedImported.selectedVideoModel || current.selectedVideoModel,
   })
 }
 
@@ -856,12 +934,6 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   streamImages: false,
   streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
   customProviders: [],
-  profiles: [
-    createDefaultOpenAIProfile(),
-    createDefaultVolcengineProfile(),
-  ],
-  videoProfiles: [],
-  activeVideoProfileId: '',
   clearInputAfterSubmit: false,
   persistInputOnRestart: true,
   reuseTaskApiProfileTemporarily: false,
@@ -873,4 +945,9 @@ export const DEFAULT_SETTINGS: AppSettings = normalizeSettings({
   agentScrollToBottomAfterSubmit: true,
   agentMaxToolRounds: DEFAULT_AGENT_MAX_TOOL_ROUNDS,
   agentWebSearch: false,
+  videoApiKeys: {},
+  selectedVideoModel: DEFAULT_VIDEO_MODEL,
+  galleryApiKey: '',
+  agentApiKey: '',
+  videoApiKey: '',
 })

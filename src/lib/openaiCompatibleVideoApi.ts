@@ -1,10 +1,12 @@
 import type { VideoParams, VideoProfile, VideoReference, AudioReference } from '../types'
 import { buildApiUrl, isApiProxyAvailable } from './devProxy'
+import { storeVideo } from './db'
 
 export const VIDEO_POLL_INTERVAL_MS = 5000
 
 export interface VideoApiResult {
   videoUrl: string
+  videoStoreId: string
   coverImageUrl: string
   revisedPrompt?: string
 }
@@ -29,7 +31,7 @@ export interface CallVideoApiOptions {
   /** 多模态参考 - 音频 */
   inputAudios?: AudioReference[]
   onTaskEnqueued?: (task: { taskId: string }) => void
-  onStatusChange?: (status: string) => void
+  onStatusChange?: (status: string, progress?: number) => void
   signal?: AbortSignal
 }
 
@@ -37,58 +39,130 @@ export interface CallVideoApiOptions {
 
 export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ taskId: string }> {
   const useProxy = isApiProxyAvailable()
-  const url = buildApiUrl(opts.profile.baseUrl, 'video/generations', null, useProxy)
+  const url = buildApiUrl(opts.profile.baseUrl, 'videos', null, useProxy)
 
   const body: Record<string, unknown> = {
     model: opts.params.model || opts.model,
     prompt: opts.prompt,
-    // duration 转为整数（秒），Seedance 2.0 支持 4-15
-    duration: normalizeDuration(opts.params.duration),
-    ratio: opts.params.ratio,
   }
 
-  // 可选参数（对齐 Seedance 2.0 官方字段名）
-  if (opts.params.resolution) body.resolution = opts.params.resolution
-  if (opts.params.seed != null && opts.params.seed > 0) body.seed = opts.params.seed
-  if (opts.params.watermark != null) body.watermark = opts.params.watermark
-  if (opts.params.generateAudio != null) body.generate_audio = opts.params.generateAudio
-  if (opts.params.cameraFixed != null) body.camera_fixed = opts.params.cameraFixed
-  if (opts.params.returnLastFrame != null) body.return_last_frame = opts.params.returnLastFrame
+  // 根据模型类型映射参数
+  const model = opts.params.model || opts.model || ''
 
-  // 图生视频：附加参考图，根据图片数量设置 role
-  if (opts.inputImages && opts.inputImages.length > 0) {
-    const imgCount = opts.inputImages.length
-    body.images = opts.inputImages.map((img, idx) => {
-      let role: string
-      if (imgCount === 1) {
-        role = 'first_frame'
-      } else if (imgCount === 2) {
-        role = idx === 0 ? 'first_frame' : 'last_frame'
-      } else {
-        // Multi mode: all images are reference_image
-        role = 'reference_image'
+  // 时长：按文档要求区分字段名和类型
+  if (model === 'grok-video-3') {
+    body.seconds = String(opts.params.grokSeconds || 10)
+  } else if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
+    body.seconds = String(opts.params.duration || 5)
+  } else {
+    body.duration = normalizeDuration(opts.params.duration)
+  }
+
+  // 比例参数：不同模型使用不同字段名
+  if (opts.params.ratio && opts.params.ratio !== 'adaptive') {
+    if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
+      body.size = opts.params.ratio
+    } else {
+      body.aspect_ratio = opts.params.ratio
+    }
+  }
+
+  // 分辨率：仅 viduq3 / grok 支持
+  if (opts.params.resolution) {
+    if (model === 'viduq3' || model === 'grok-video-3') {
+      body.resolution = opts.params.resolution
+    }
+  }
+
+  // Kling 模式
+  if (opts.params.klingMode) {
+    body.mode = opts.params.klingMode
+  }
+
+  // 种子：仅 viduq3 支持
+  if (opts.params.seed != null && opts.params.seed > 0) {
+    if (model === 'viduq3') {
+      body.seed = opts.params.seed
+    }
+  }
+
+  // 音频
+  if (opts.params.generateAudio != null) {
+    if (model === 'kling-v3') {
+      body.audio = opts.params.generateAudio
+    } else if (model === 'viduq3') {
+      body.audio = opts.params.generateAudio
+    } else if (model.startsWith('doubao-seedance')) {
+      body.generate_audio = opts.params.generateAudio
+    }
+  }
+
+  // 上传参考素材获取公网 URL（文档要求必须为公网可访问 URL）
+  const uploadedImageUrls = opts.inputImages?.length
+    ? await Promise.all(
+        opts.inputImages.map((img) =>
+          uploadMedia(img.dataUrl, 'image.png', opts.profile.apiKey, opts.profile.baseUrl, opts.signal)
+        )
+      )
+    : []
+
+  const uploadedVideoUrls = opts.inputVideos?.length
+    ? await Promise.all(
+        opts.inputVideos.map((vid) =>
+          uploadMedia(vid.dataUrl, vid.fileName, opts.profile.apiKey, opts.profile.baseUrl, opts.signal)
+        )
+      )
+    : []
+
+  const uploadedAudioUrls = opts.inputAudios?.length
+    ? await Promise.all(
+        opts.inputAudios.map((aud) =>
+          uploadMedia(aud.dataUrl, aud.fileName, opts.profile.apiKey, opts.profile.baseUrl, opts.signal)
+        )
+      )
+    : []
+
+  // 参考素材（图片 / 视频 / 音频）按模型要求映射字段名
+  const imageUrls = uploadedImageUrls
+  const videoUrls = uploadedVideoUrls.map((url) => `video_url:${url}`)
+  const audioUrls = uploadedAudioUrls
+
+  if (imageUrls.length > 0 || videoUrls.length > 0 || audioUrls.length > 0) {
+    if (model === 'kling-v3') {
+      // Kling: 1-2 张图用 image_with_roles，3+ 张图用 reference_images
+      if (imageUrls.length > 0) {
+        if (imageUrls.length <= 2) {
+          body.image_with_roles = imageUrls.map((url, idx) => {
+            const role = imageUrls.length === 1
+              ? 'first_frame'
+              : idx === 0 ? 'first_frame' : 'last_frame'
+            return { url, role }
+          })
+        } else {
+          body.reference_images = imageUrls
+        }
       }
-      return {
-        image_url: img.dataUrl,
-        role,
+    } else if (model === 'viduq3') {
+      if (imageUrls.length > 0) {
+        body.image_urls = imageUrls
       }
-    })
-  }
-
-  // 多模态参考 - 视频
-  if (opts.inputVideos && opts.inputVideos.length > 0) {
-    body.videos = opts.inputVideos.map((vid) => ({
-      video_url: vid.dataUrl,
-      role: 'reference_video',
-    }))
-  }
-
-  // 多模态参考 - 音频
-  if (opts.inputAudios && opts.inputAudios.length > 0) {
-    body.audios = opts.inputAudios.map((aud) => ({
-      audio_url: aud.dataUrl,
-      role: 'reference_audio',
-    }))
+    } else if (model === 'grok-video-3') {
+      if (imageUrls.length > 0) {
+        body.images = imageUrls
+      }
+    } else if (model.startsWith('doubao-seedance')) {
+      // 豆包：图片 + video_url:前缀视频 + base64音频 统一放入 reference_images
+      const refs = [...imageUrls, ...videoUrls, ...audioUrls]
+      if (refs.length > 0) {
+        body.reference_images = refs
+      }
+    } else if (model === 'happyhorse-1.0') {
+      // Happyhorse：图片 + video_url:前缀视频 放入 reference_images
+      const refs = [...imageUrls, ...videoUrls]
+      if (refs.length > 0) {
+        body.reference_images = refs
+      }
+    }
   }
 
   const response = await fetch(url, {
@@ -121,7 +195,7 @@ export async function pollVideoTask(
   taskId: string,
   profile: VideoProfile,
   signal?: AbortSignal,
-  onStatusChange?: (status: string) => void,
+  onStatusChange?: (status: string, progress?: number) => void,
 ): Promise<VideoApiResult> {
   while (true) {
     if (signal?.aborted) {
@@ -130,26 +204,37 @@ export async function pollVideoTask(
 
     const task = await getVideoTaskStatus(taskId, profile, signal)
 
-    onStatusChange?.(String(task.status))
+    onStatusChange?.(String(task.status), task.progress as number | undefined)
 
     const statusStr = String(task.status)
     if (statusStr === 'succeed' || statusStr === 'completed' || statusStr === 'success') {
-      const content = task.content as Record<string, unknown> | undefined
-      const videoUrl = content?.video_url as string | undefined || task.video_url as string | undefined
-      const coverUrl = content?.cover_image_url as string | undefined || task.cover_image_url as string | undefined || ''
-      if (!videoUrl) {
-        throw new Error('视频任务成功但未返回视频 URL')
-      }
+      // 任务完成后，调用下载接口获取视频二进制文件
+      const videoBlob = await downloadVideo(taskId, profile, signal)
+
+      // 存入 IndexedDB 持久化
+      const videoStoreId = `video_${taskId}`
+      await storeVideo(videoStoreId, videoBlob)
+
+      const videoUrl = URL.createObjectURL(videoBlob)
+
+      // 从视频中提取首帧作为封面图
+      const coverImageUrl = await extractVideoCover(videoBlob)
+
+      // 提取优化后的提示词
+      const revisedPrompt = typeof task.revised_prompt === 'string' ? task.revised_prompt : undefined
+
       return {
         videoUrl,
-        coverImageUrl: coverUrl,
+        videoStoreId,
+        coverImageUrl,
+        revisedPrompt,
       }
     }
 
     if (statusStr === 'failed' || statusStr === 'error') {
       const errorObj = task.error as Record<string, unknown> | undefined
-      const errorMsg = errorObj?.message as string | undefined || task.error_message as string | undefined || '视频生成失败'
-      throw new Error(errorMsg)
+      const rawMsg = errorObj?.message as string | undefined || task.error_message as string | undefined || '视频生成失败'
+      throw new Error(extractNestedErrorMessage(rawMsg))
     }
 
     // submitted, queued, running, processing - wait and retry
@@ -165,7 +250,7 @@ async function getVideoTaskStatus(
   signal?: AbortSignal,
 ): Promise<Record<string, unknown>> {
   const useProxy = isApiProxyAvailable()
-  const url = buildApiUrl(profile.baseUrl, `video/tasks/${encodeURIComponent(taskId)}`, null, useProxy)
+  const url = buildApiUrl(profile.baseUrl, `videos/${encodeURIComponent(taskId)}`, null, useProxy)
 
   const response = await fetch(url, {
     method: 'GET',
@@ -195,26 +280,35 @@ export async function getQueuedVideoResult(
   const task = await getVideoTaskStatus(taskId, profile)
 
   const status = typeof task.status === 'string' ? task.status : ''
-  const videoUrl = (task.content as Record<string, unknown> | undefined)?.video_url as string | undefined
-    || task.video_url as string | undefined
-  const coverUrl = (task.content as Record<string, unknown> | undefined)?.cover_image_url as string | undefined
-    || task.cover_image_url as string | undefined
-    || ''
 
   if (status === 'succeed' || status === 'completed' || status === 'success') {
-    if (!videoUrl) {
-      throw new Error('视频任务成功但未返回视频 URL')
-    }
+    // 任务完成后，调用下载接口获取视频二进制文件
+    const videoBlob = await downloadVideo(taskId, profile)
+
+    // 存入 IndexedDB 持久化
+    const videoStoreId = `video_${taskId}`
+    await storeVideo(videoStoreId, videoBlob)
+
+    const videoUrl = URL.createObjectURL(videoBlob)
+
+    // 从视频中提取首帧作为封面图
+    const coverImageUrl = await extractVideoCover(videoBlob)
+
+    // 提取优化后的提示词
+    const revisedPrompt = typeof task.revised_prompt === 'string' ? task.revised_prompt : undefined
+
     return {
       videoUrl,
-      coverImageUrl: coverUrl,
+      videoStoreId,
+      coverImageUrl,
+      revisedPrompt,
     }
   }
 
   if (status === 'failed' || status === 'error') {
     const errorObj = task.error as Record<string, unknown> | undefined
-    const errorMsg = (errorObj?.message as string) || (task.error_message as string) || '视频生成失败'
-    throw new Error(errorMsg)
+    const rawMsg = (errorObj?.message as string) || (task.error_message as string) || '视频生成失败'
+    throw new Error(extractNestedErrorMessage(rawMsg))
   }
 
   throw new Error(`视频任务仍在 ${status || '未知'} 状态`)
@@ -228,6 +322,77 @@ function normalizeDuration(d: number | string): number {
   // 处理 "5s", "10s" 等格式
   const num = parseInt(d.replace(/[^\d]/g, ''), 10)
   return Number.isFinite(num) ? num : 5
+}
+
+// ===== 下载已完成的视频 =====
+
+export async function downloadVideo(
+  taskId: string,
+  profile: VideoProfile,
+  signal?: AbortSignal,
+): Promise<Blob> {
+  const useProxy = isApiProxyAvailable()
+  const url = buildApiUrl(profile.baseUrl, `videos/${encodeURIComponent(taskId)}/content`, null, useProxy)
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${profile.apiKey}`,
+    },
+    signal,
+  })
+
+  if (!response.ok) {
+    throw new Error(await getVideoErrorMessage(response))
+  }
+
+  return await response.blob()
+}
+
+/** 从视频 Blob 提取首帧作为封面图 */
+export async function extractVideoCover(videoBlob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const video = document.createElement('video')
+    video.preload = 'metadata'
+    video.muted = true
+    video.playsInline = true
+
+    const url = URL.createObjectURL(videoBlob)
+    video.src = url
+
+    const cleanup = () => URL.revokeObjectURL(url)
+
+    video.addEventListener('error', () => {
+      cleanup()
+      reject(new Error('无法加载视频以提取封面'))
+    })
+
+    video.addEventListener('loadeddata', () => {
+      // 跳转到第一帧
+      video.currentTime = 0
+    })
+
+    video.addEventListener('seeked', () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width = video.videoWidth
+        canvas.height = video.videoHeight
+        const ctx = canvas.getContext('2d')
+        if (!ctx) {
+          cleanup()
+          reject(new Error('无法获取 canvas 上下文'))
+          return
+        }
+        ctx.drawImage(video, 0, 0)
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.85)
+        cleanup()
+        resolve(dataUrl)
+      } catch (err) {
+        cleanup()
+        reject(err)
+      }
+    }, { once: true })
+  })
 }
 
 function resolveTaskId(json: Record<string, unknown>): string {
@@ -250,11 +415,11 @@ async function getVideoErrorMessage(response: Response): Promise<string> {
     const errJson = await response.json() as Record<string, unknown>
     const errorObj = errJson.error as Record<string, unknown> | undefined
     if (errorObj?.message) {
-      errorMsg = errorObj.message as string
+      errorMsg = extractNestedErrorMessage(errorObj.message as string)
     } else if (typeof errJson.message === 'string') {
-      errorMsg = errJson.message
+      errorMsg = extractNestedErrorMessage(errJson.message)
     } else if (typeof errJson.error === 'string') {
-      errorMsg = errJson.error
+      errorMsg = extractNestedErrorMessage(errJson.error)
     } else if (errorObj?.code) {
       errorMsg = `Error ${errorObj.code}`
     } else {
@@ -270,6 +435,40 @@ async function getVideoErrorMessage(response: Response): Promise<string> {
   return errorMsg
 }
 
+/** 递归解析嵌套 JSON 字符串中的最内层错误信息 */
+function extractNestedErrorMessage(msg: string): string {
+  // 尝试递归解析嵌套的 JSON 字符串
+  let current = msg
+  for (let i = 0; i < 5; i++) {
+    // 最多解 5 层，防止无限循环
+    if (!current.startsWith('{') && !current.startsWith('[')) break
+    try {
+      const parsed = JSON.parse(current)
+      if (typeof parsed === 'object' && parsed !== null) {
+        // 优先提取 message 字段
+        if (typeof parsed.message === 'string') {
+          current = parsed.message
+          continue
+        }
+        // 其次提取 error.message
+        if (typeof parsed.error === 'object' && parsed.error !== null) {
+          const inner = parsed.error as Record<string, unknown>
+          if (typeof inner.message === 'string') {
+            current = inner.message
+            continue
+          }
+        }
+        // 都没有，说明已经是最内层了
+        break
+      }
+      break
+    } catch {
+      break
+    }
+  }
+  return current
+}
+
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -282,4 +481,59 @@ function sleep(ms: number, signal?: AbortSignal): Promise<void> {
       reject(new DOMException('Aborted', 'AbortError'))
     }, { once: true })
   })
+}
+
+/**
+ * 上传媒体文件到视频服务商，获取公网可访问的 URL。
+ * 图片用 base64 JSON 方式上传；视频/音频等 blob 资源先 fetch 后再 multipart 上传。
+ */
+async function uploadMedia(
+  dataUrl: string,
+  fileName: string,
+  apiKey: string,
+  baseUrl: string,
+  signal?: AbortSignal,
+): Promise<string> {
+  const useProxy = isApiProxyAvailable()
+  const url = buildApiUrl(baseUrl, 'files/upload', null, useProxy)
+
+  let response: Response
+
+  if (dataUrl.startsWith('data:')) {
+    // base64 dataUrl: 用 JSON body 直接上传
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: JSON.stringify({ data: dataUrl }),
+      signal,
+    })
+  } else {
+    // blob URL: 先 fetch blob，再用 multipart/form-data 上传
+    const blob = await fetch(dataUrl).then((r) => r.blob())
+    const formData = new FormData()
+    formData.append('file', blob, fileName)
+    response = await fetch(url, {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+      },
+      body: formData,
+      signal,
+    })
+  }
+
+  if (!response.ok) {
+    throw new Error(await getVideoErrorMessage(response))
+  }
+
+  const json = await response.json() as Record<string, unknown>
+  const data = json.data as Record<string, unknown> | undefined
+  const uploadedUrl = data?.url as string | undefined || json.url as string | undefined
+  if (!uploadedUrl) {
+    throw new Error('素材上传成功但未返回 URL')
+  }
+  return uploadedUrl
 }

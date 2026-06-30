@@ -249,17 +249,24 @@ function getAgentAssistantBlocks(round: AgentRound | null, taskSlots: AgentRound
       })
       continue
     }
-
-    if (item.type === 'message') {
-      const content = getTextFromOutputItem(item)
-      if (content) {
-        renderedTextBlocks += 1
-        blocks.push({ type: 'text', key: `text:${item.id ?? blocks.length}`, content })
-      }
-    }
   }
 
   flushWebSearchGroup()
+
+  // Collect all message-type text from outputItems, deduplicate identical content
+  const textParts: string[] = []
+  for (const item of outputItems) {
+    if (item.type === 'message') {
+      const content = getTextFromOutputItem(item)
+      if (content) textParts.push(content)
+    }
+  }
+  const uniqueTextParts = [...new Set(textParts)]
+  const mergedTextContent = uniqueTextParts.join('\n\n').trim()
+  if (mergedTextContent) {
+    renderedTextBlocks += 1
+    blocks.push({ type: 'text', key: 'text:merged', content: mergedTextContent })
+  }
 
   if (hasText && renderedTextBlocks === 0) blocks.push({ type: 'text', key: 'text:fallback' })
   for (const slot of taskSlots) {
@@ -534,13 +541,20 @@ export default function AgentWorkspace() {
   const activeMessages = useMemo(() => {
     if (!conversation) return []
     const messages: AgentMessage[] = []
+    const seenMessageIds = new Set<string>()
     for (const round of activeRounds) {
       const userMessage = conversation.messages.find((message) => message.id === round.userMessageId)
-      if (userMessage) messages.push(userMessage)
+      if (userMessage && !seenMessageIds.has(userMessage.id)) {
+        messages.push(userMessage)
+        seenMessageIds.add(userMessage.id)
+      }
       const assistantMessage = round.assistantMessageId
         ? conversation.messages.find((message) => message.id === round.assistantMessageId)
         : conversation.messages.find((message) => message.roundId === round.id && message.role === 'assistant')
-      if (assistantMessage) messages.push(assistantMessage)
+      if (assistantMessage && !seenMessageIds.has(assistantMessage.id)) {
+        messages.push(assistantMessage)
+        seenMessageIds.add(assistantMessage.id)
+      }
     }
     return messages
   }, [activeRounds, conversation])
@@ -613,7 +627,7 @@ export default function AgentWorkspace() {
 
     setConfirmDialog({
       title: '删除对话',
-      message: '确定要删除这个 Agent 对话吗？',
+      message: '确定要删除这个对话吗？',
       checkbox: generatedImageCount > 0
         ? {
             label: `同时删除对话中生成的图片（${generatedImageCount} 张）`,
@@ -773,7 +787,7 @@ export default function AgentWorkspace() {
   const handleReuse = (task: TaskRecord) => {
     setConfirmDialog({
       title: '切换到画廊模式？',
-      message: '复用参数会应用到画廊输入区。切换到画廊模式后，当前 Agent 对话仍会保留。',
+      message: '复用参数会应用到画廊输入区。切换到画廊模式后，当前对话仍会保留。',
       confirmText: '切换并复用',
       cancelText: '取消',
       action: () => {
@@ -989,7 +1003,7 @@ export default function AgentWorkspace() {
         >
           {!conversation ? (
             <div className="py-20 text-center text-gray-400">
-              <p className="mb-3">还没有 Agent 对话</p>
+              <p className="mb-3">还没有对话</p>
               <button type="button" onClick={createConversation} className="rounded-lg bg-blue-500 px-4 py-2 text-white hover:bg-blue-600 transition-colors">创建对话</button>
             </div>
           ) : (
@@ -997,7 +1011,7 @@ export default function AgentWorkspace() {
               if (activeMessages.length === 0) {
                 return (
                   <div className="py-20 text-center text-gray-400">
-                    <p className="mb-2">开始新的 Agent 对话</p>
+                    <p className="mb-2">开始新的对话</p>
                     <p className="text-xs">在底部输入框发送消息即可创建第一轮对话。</p>
                   </div>
                 )

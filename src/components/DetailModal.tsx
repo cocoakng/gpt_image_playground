@@ -210,10 +210,13 @@ export default function DetailModal() {
   const currentImageSize = currentOutputImageId ? imageSizes[currentOutputImageId] : ''
   const currentActualParams = currentOutputImageId ? task.actualParamsByImage?.[currentOutputImageId] : undefined
   const currentRevisedPrompt = currentOutputImageId ? task.revisedPromptByImage?.[currentOutputImageId]?.trim() : ''
+  // 视频任务的优化提示词
+  const videoRevisedPrompt = task.taskType === 'video' ? (task.revisedPrompt?.trim() || '') : ''
+  const displayRevisedPrompt = currentRevisedPrompt || videoRevisedPrompt
   // 将 @图N 等 mention 标记转换为实际发送给 API 的形式（如 [image 1]）后再比较，
-  // 这样仅由标签渲染差异导致的不一致不会被当作“被改写”。
+  // 这样仅由标签渲染差异导致的不一致不会被当作”被改写”。
   const promptSentToApi = replaceImageMentionsForApi(task.prompt, task.inputImageIds.length).trim()
-  const showRevisedPrompt = Boolean(currentRevisedPrompt && currentRevisedPrompt !== promptSentToApi)
+  const showRevisedPrompt = Boolean(displayRevisedPrompt && displayRevisedPrompt !== promptSentToApi)
   const codexCliPromptKey = getCodexCliPromptKey(settings)
   const hasHandledPromptWarning = settings.codexCli || dismissedCodexCliPrompts.includes(codexCliPromptKey)
   const taskProvider = task.apiProvider
@@ -885,10 +888,10 @@ export default function DetailModal() {
                 </button>
               </div>
             )}
-            {showRevisedPrompt && currentRevisedPrompt && (
+            {showRevisedPrompt && displayRevisedPrompt && (
               <div className="mb-4">
                 <ActualValueBadge
-                  value={currentRevisedPrompt}
+                  value={displayRevisedPrompt}
                   className="max-w-full rounded px-2 py-1 text-left text-xs leading-relaxed whitespace-pre-wrap"
                 />
               </div>
@@ -1007,23 +1010,16 @@ export default function DetailModal() {
                     <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.seed}</span>
                   </div>
                 )}
-                {task.videoParams?.watermark && (
+                {task.videoParams?.klingMode && (
                   <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                    <span className="text-gray-400 dark:text-gray-500">水印</span>
+                    <span className="text-gray-400 dark:text-gray-500">生成模式</span>
                     <br />
-                    <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
+                    <span className="font-medium text-gray-700 dark:text-gray-200">{task.videoParams.klingMode === 'pro' ? '专业 (1080p)' : '标准 (720p)'}</span>
                   </div>
                 )}
                 {task.videoParams?.generateAudio && (
                   <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
                     <span className="text-gray-400 dark:text-gray-500">音画同步</span>
-                    <br />
-                    <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
-                  </div>
-                )}
-                {task.videoParams?.cameraFixed && (
-                  <div className="bg-gray-50 dark:bg-white/[0.03] rounded-lg px-3 py-2">
-                    <span className="text-gray-400 dark:text-gray-500">固定镜头</span>
                     <br />
                     <span className="font-medium text-gray-700 dark:text-gray-200">已开启</span>
                   </div>

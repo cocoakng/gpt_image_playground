@@ -34,7 +34,7 @@ export interface VideoTaskOptions {
   /** 多模态参考 - 音频 */
   inputAudios?: AudioReference[]
   onStatusUpdate: (taskId: string, patch: Partial<TaskRecord>) => void
-  onTaskComplete: (taskId: string, videoUrl: string, coverImageId: string | null) => void
+  onTaskComplete: (taskId: string, videoUrl: string, videoStoreId: string, coverImageId: string | null, revisedPrompt?: string) => void
   onTaskError: (taskId: string, error: string) => void
   /** 可选：任务状态变化回调，供前端展示进度 */
   onVideoStatusChange?: (taskId: string, videoStatus: string) => void
@@ -76,14 +76,11 @@ export async function submitVideoTask(options: VideoTaskOptions): Promise<void> 
 
     const errorMessage = err instanceof Error ? err.message : String(err)
     options.onStatusUpdate(options.taskId, {
-      volcengineRecoverable: true,
+      volcengineRecoverable: false,
       status: 'error',
-      error: '视频任务提交中断，之后会继续查询结果。',
+      error: errorMessage,
       finishedAt: Date.now(),
     })
-
-    // 安排恢复轮询
-    scheduleVideoRecovery(options.taskId, options)
   }
 }
 
@@ -99,26 +96,27 @@ async function pollVideoTaskWithRecovery(
       taskId,
       options.profile,
       controller.signal,
-      (status) => {
+      (status, progress) => {
         // 更新 store 中的详细状态
         options.onStatusUpdate(options.taskId, {
           status: 'running' as const,
           videoStatus: status,
+          videoProgress: progress,
         })
         // 通知 UI 展示进度
         options.onVideoStatusChange?.(options.taskId, status)
       },
     )
 
-    // 成功 - 存储封面图
+    // 成功 - 存储封面图（coverImageUrl 已经是 data URL）
     const coverImageId = result.coverImageUrl
-      ? await storeCoverImage(result.coverImageUrl)
+      ? await storeCoverImageFromDataUrl(result.coverImageUrl)
       : null
 
     // 缓存视频 URL
     videoCache.set(taskId, { videoUrl: result.videoUrl, coverUrl: result.coverImageUrl })
 
-    options.onTaskComplete(options.taskId, result.videoUrl, coverImageId)
+    options.onTaskComplete(options.taskId, result.videoUrl, result.videoStoreId, coverImageId, result.revisedPrompt)
 
   } catch (err) {
     if (controller.signal.aborted) return
@@ -144,19 +142,8 @@ async function pollVideoTaskWithRecovery(
 
 // ===== 封面图存储 =====
 
-async function storeCoverImage(url: string): Promise<string> {
+async function storeCoverImageFromDataUrl(dataUrl: string): Promise<string> {
   try {
-    const response = await fetch(url, { cache: 'no-store' })
-    if (!response.ok) throw new Error(`封面图下载失败: HTTP ${response.status}`)
-
-    const blob = await response.blob()
-    const bytes = new Uint8Array(await blob.arrayBuffer())
-    let binary = ''
-    for (let i = 0; i < bytes.length; i += 0x8000) {
-      binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
-    }
-    const dataUrl = `data:${blob.type || 'image/png'};base64,${btoa(binary)}`
-
     const imgId = await storeImage(dataUrl, 'generated')
     return imgId
   } catch (err) {
@@ -204,12 +191,12 @@ async function recoverVideoTask(taskId: string, options: VideoTaskOptions): Prom
     const result = await getQueuedVideoApiResult(volcengineTaskId, options.profile)
 
     const coverImageId = result.coverImageUrl
-      ? await storeCoverImage(result.coverImageUrl)
+      ? await storeCoverImageFromDataUrl(result.coverImageUrl)
       : null
 
     videoCache.set(taskId, { videoUrl: result.videoUrl, coverUrl: result.coverImageUrl })
 
-    options.onTaskComplete(taskId, result.videoUrl, coverImageId)
+    options.onTaskComplete(taskId, result.videoUrl, result.videoStoreId, coverImageId, result.revisedPrompt)
 
   } catch (err) {
     const errorMessage = err instanceof Error ? err.message : String(err)

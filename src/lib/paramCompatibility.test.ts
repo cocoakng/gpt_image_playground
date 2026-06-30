@@ -1,53 +1,35 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_PARAMS } from '../types'
-import { createDefaultFalProfile, createDefaultOpenAIProfile, DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
-import { getOutputImageLimitForSettings, normalizeParamsForSettings } from './paramCompatibility'
+import { createDefaultOpenAIProfile, DEFAULT_SETTINGS, normalizeSettings } from './apiProfiles'
+import { getOutputImageLimitForSettings, normalizeParamsForSettings, MAX_FAL_OUTPUT_IMAGES, MAX_OPENAI_OUTPUT_IMAGES, DEFAULT_FAL_IMAGE_SIZE } from './paramCompatibility'
 
 describe('parameter compatibility', () => {
   it('limits OpenAI output count to 10', () => {
-    const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', streamImages: false })
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
-      profiles: [openAIProfile],
-      activeProfileId: openAIProfile.id,
+      galleryApiKey: 'test-key',
     })
 
-    expect(getOutputImageLimitForSettings(settings)).toBe(10)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(10)
-  })
-
-  it('limits fal.ai output count to 4', () => {
-    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
-    const settings = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [falProfile],
-      activeProfileId: falProfile.id,
-    })
-
-    expect(getOutputImageLimitForSettings(settings)).toBe(4)
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 8 }, settings).n).toBe(4)
+    expect(getOutputImageLimitForSettings(settings)).toBe(MAX_OPENAI_OUTPUT_IMAGES)
+    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 12 }, settings).n).toBe(MAX_OPENAI_OUTPUT_IMAGES)
   })
 
   it('keeps OpenAI streaming output count so the request can disable streaming', () => {
-    const openAIProfile = createDefaultOpenAIProfile({ apiKey: 'test-key', streamImages: true })
     const settings = normalizeSettings({
       ...DEFAULT_SETTINGS,
-      profiles: [openAIProfile],
-      activeProfileId: openAIProfile.id,
+      galleryApiKey: 'test-key',
     })
 
     expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, n: 4 }, settings).n).toBe(4)
   })
 
-  it('only replaces fal.ai auto size in text-to-image mode', () => {
-    const falProfile = createDefaultFalProfile({ apiKey: 'fal-key' })
-    const settings = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [falProfile],
-      activeProfileId: falProfile.id,
-    })
+  it('fal max output is 4', () => {
+    // Verify the constant value directly (fal profile detection via settings is no longer supported)
+    expect(MAX_FAL_OUTPUT_IMAGES).toBe(4)
+  })
 
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings).size).toBe('1360x1024')
-    expect(normalizeParamsForSettings({ ...DEFAULT_PARAMS, size: 'auto' }, settings, { hasInputImages: true }).size).toBe('auto')
+  it('fal default image size is 1360x1024', () => {
+    // Verify the constant value directly
+    expect(DEFAULT_FAL_IMAGE_SIZE).toBe('1360x1024')
   })
 })

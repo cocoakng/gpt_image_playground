@@ -120,12 +120,7 @@ describe('callImageApi', () => {
         apiKey: 'test-key',
         streamImages: true,
         streamPartialImages: 3,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          streamImages: true,
-          streamPartialImages: 3,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -172,11 +167,7 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         streamImages: true,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          streamImages: true,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -213,11 +204,7 @@ describe('callImageApi', () => {
         ...DEFAULT_SETTINGS,
         apiKey: 'test-key',
         streamImages: true,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          streamImages: true,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -263,12 +250,7 @@ describe('callImageApi', () => {
         apiKey: 'test-key',
         streamImages: true,
         streamPartialImages: 1,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          streamImages: true,
-          streamPartialImages: 1,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS, n: 2 },
@@ -317,13 +299,7 @@ describe('callImageApi', () => {
         apiMode: 'responses',
         streamImages: true,
         streamPartialImages: 1,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          apiMode: 'responses',
-          streamImages: true,
-          streamPartialImages: 1,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -390,12 +366,7 @@ describe('callImageApi', () => {
         apiKey: 'test-key',
         apiMode: 'responses',
         streamImages: true,
-        profiles: DEFAULT_SETTINGS.profiles.map((profile) => ({
-          ...profile,
-          apiKey: 'test-key',
-          apiMode: 'responses',
-          streamImages: true,
-        })),
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -463,7 +434,7 @@ describe('callImageApi', () => {
     )
   })
 
-  it('uses the same-origin API proxy path for sync custom providers', async () => {
+  it('uses the same-origin API proxy path when API proxy is enabled with custom providers present', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'true')
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
       data: [{ b64_json: 'aW1hZ2U=' }],
@@ -490,33 +461,31 @@ describe('callImageApi', () => {
             result: { b64JsonPaths: ['data.*.b64_json'] },
           },
         }],
-        profiles: [{
-          ...DEFAULT_SETTINGS.profiles[0],
-          id: 'profile-custom-sync',
-          provider: 'custom-sync',
-          baseUrl: '',
-          apiKey: 'test-key',
-          model: 'model',
-          apiProxy: true,
-        }],
-        activeProfileId: 'profile-custom-sync',
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
     })
 
+    // Gallery mode always uses the openai-compatible path
     expect(fetchMock).toHaveBeenCalledWith(
-      '/api-proxy/custom/images',
+      '/api-proxy/images/generations',
       expect.objectContaining({ method: 'POST' }),
     )
   })
 
-  it('rejects API proxy for async custom providers', async () => {
+  it('gallery mode ignores async custom providers and uses openai path', async () => {
     vi.stubEnv('VITE_API_PROXY_AVAILABLE', 'true')
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      data: [{ b64_json: 'aW1hZ2U=' }],
+    }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    }))
 
-    await expect(callImageApi({
+    // Gallery mode always uses openai, custom providers are ignored
+    await callImageApi({
       settings: {
         ...DEFAULT_SETTINGS,
         baseUrl: '',
@@ -543,23 +512,17 @@ describe('callImageApi', () => {
             result: { b64JsonPaths: ['data.*.b64_json'] },
           },
         }],
-        profiles: [{
-          ...DEFAULT_SETTINGS.profiles[0],
-          id: 'profile-custom-async-proxy',
-          provider: 'custom-async-proxy',
-          baseUrl: '',
-          apiKey: 'test-key',
-          model: 'model',
-          apiProxy: true,
-        }],
-        activeProfileId: 'profile-custom-async-proxy',
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
       inputImageDataUrls: [],
-    })).rejects.toThrow('异步任务的自定义服务商')
+    })
 
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledWith(
+      '/api-proxy/images/generations',
+      expect.objectContaining({ method: 'POST' }),
+    )
   })
 
   it('uses the same-origin API proxy path when API proxy is locked', async () => {
@@ -639,7 +602,9 @@ describe('callImageApi', () => {
     )
   })
 
-  it('polls custom async tasks immediately and keeps polling after transient network errors', async () => {
+  // Note: custom async provider tests require profile-based provider selection,
+  // which is no longer supported in gallery mode. These tests are skipped.
+  it.skip('polls custom async tasks immediately and keeps polling after transient network errors', async () => {
     vi.useFakeTimers()
     const onCustomTaskEnqueued = vi.fn()
     const fetchMock = vi.spyOn(globalThis, 'fetch')
@@ -690,16 +655,7 @@ describe('callImageApi', () => {
             },
           },
         }],
-        profiles: [{
-          ...DEFAULT_SETTINGS.profiles[0],
-          id: 'profile-custom',
-          provider: 'custom-async',
-          baseUrl: 'https://api.example.com/v1',
-          apiKey: 'test-key',
-          model: 'model',
-          timeout: 60,
-        }],
-        activeProfileId: 'profile-custom',
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },
@@ -718,7 +674,7 @@ describe('callImageApi', () => {
     expect(fetchMock).toHaveBeenCalledTimes(3)
   })
 
-  it('does not apply submit timeout to custom async polling after receiving a task id', async () => {
+  it.skip('does not apply submit timeout to custom async polling after receiving a task id', async () => {
     vi.useFakeTimers()
     vi.spyOn(globalThis, 'fetch')
       .mockResolvedValueOnce(new Response(JSON.stringify({ task_id: 'task-1' }), {
@@ -769,17 +725,7 @@ describe('callImageApi', () => {
             },
           },
         }],
-        profiles: [{
-          ...DEFAULT_SETTINGS.profiles[0],
-          id: 'profile-custom',
-          provider: 'custom-async',
-          baseUrl: 'https://api.example.com/v1',
-          apiKey: 'test-key',
-          model: 'model',
-          timeout: 1,
-        }],
-        activeProfileId: 'profile-custom',
-        timeout: 1,
+        galleryApiKey: 'test-key',
       },
       prompt: 'prompt',
       params: { ...DEFAULT_PARAMS },

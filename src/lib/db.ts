@@ -1,11 +1,12 @@
 import type { AgentConversation, TaskRecord, StoredImage, StoredImageThumbnail } from '../types'
 
 const DB_NAME = 'ai-link-studio'
-const DB_VERSION = 3
+const DB_VERSION = 5
 const STORE_TASKS = 'tasks'
 const STORE_IMAGES = 'images'
 const STORE_THUMBNAILS = 'thumbnails'
 const STORE_AGENT_CONVERSATIONS = 'agentConversations'
+const STORE_VIDEOS = 'videos'
 const THUMBNAIL_MAX_SIZE = 720
 const THUMBNAIL_QUALITY = 0.9
 const THUMBNAIL_VERSION = 2
@@ -17,6 +18,7 @@ function openDB(): Promise<IDBDatabase> {
     const req = indexedDB.open(DB_NAME, DB_VERSION)
     req.onupgradeneeded = (e) => {
       const db = (e.target as IDBOpenDBRequest).result
+      // 按需创建缺失的 store（不删除已有数据）
       if (!db.objectStoreNames.contains(STORE_TASKS)) {
         db.createObjectStore(STORE_TASKS, { keyPath: 'id' })
       }
@@ -29,9 +31,15 @@ function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains(STORE_AGENT_CONVERSATIONS)) {
         db.createObjectStore(STORE_AGENT_CONVERSATIONS, { keyPath: 'id' })
       }
+      if (!db.objectStoreNames.contains(STORE_VIDEOS)) {
+        db.createObjectStore(STORE_VIDEOS, { keyPath: 'id' })
+      }
     }
     req.onsuccess = () => resolve(req.result)
     req.onerror = () => reject(req.error)
+    req.onblocked = () => {
+      console.warn('IndexedDB upgrade blocked by open connections. Closing all tabs and reopening may help.')
+    }
   })
 }
 
@@ -43,6 +51,10 @@ function dbTransaction<T>(
   return openDB().then(
     (db) =>
       new Promise((resolve, reject) => {
+        if (!db.objectStoreNames.contains(storeName)) {
+          reject(new Error(`IndexedDB store "${storeName}" not found. Please refresh the page.`))
+          return
+        }
         const tx = db.transaction(storeName, mode)
         const store = tx.objectStore(storeName)
         const req = fn(store)
@@ -203,6 +215,39 @@ export function clearImages(): Promise<undefined> {
         tx.oncomplete = () => resolve(undefined)
         tx.onerror = () => reject(tx.error)
       }),
+  )
+}
+
+// ===== Videos =====
+
+export interface StoredVideo {
+  id: string
+  blob: Blob
+  mimeType?: string
+  storedAt: number
+}
+
+export function storeVideo(id: string, blob: Blob): Promise<IDBValidKey> {
+  return dbTransaction(STORE_VIDEOS, 'readwrite', (s) =>
+    s.put({ id, blob, mimeType: blob.type || undefined, storedAt: Date.now() })
+  )
+}
+
+export function getVideo(id: string): Promise<StoredVideo | undefined> {
+  return dbTransaction(STORE_VIDEOS, 'readonly', (s) => s.get(id))
+}
+
+export function deleteVideo(id: string): Promise<undefined> {
+  return dbTransaction(STORE_VIDEOS, 'readwrite', (s) => s.delete(id))
+}
+
+export function clearVideos(): Promise<undefined> {
+  return dbTransaction(STORE_VIDEOS, 'readwrite', (s) => s.clear())
+}
+
+export function getAllVideoIds(): Promise<string[]> {
+  return dbTransaction(STORE_VIDEOS, 'readonly', (s) => s.getAllKeys()).then((keys) =>
+    keys.map(String)
   )
 }
 

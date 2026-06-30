@@ -1,7 +1,5 @@
 import { describe, expect, it } from 'vitest'
 import {
-  createDefaultFalProfile,
-  createDefaultOpenAIProfile,
   DEFAULT_IMAGES_MODEL,
   DEFAULT_SETTINGS,
   normalizeSettings,
@@ -9,114 +7,28 @@ import {
 import { buildSettingsFromUrlParams, clearUrlSettingParams, hasUrlSettingParams } from './urlSettings'
 
 describe('URL settings params', () => {
-  it('creates and activates a new OpenAI profile for legacy URL params', () => {
+  it('sets gallery API key from legacy URL params', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key')),
     })
 
-    expect(next.profiles).toHaveLength(2)
-    expect(next.activeProfileId).not.toBe(current.activeProfileId)
-    expect(next.profiles.find((profile) => profile.id === next.activeProfileId)).toMatchObject({
-      name: 'URL 参数配置',
-      provider: 'openai',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'test-key',
-      model: DEFAULT_IMAGES_MODEL,
-    })
+    expect(next.galleryApiKey).toBe('test-key')
   })
 
-  it('uses model from URL params for OpenAI profiles', () => {
+  it('ignores model from URL params since gallery model is fixed', () => {
     const current = normalizeSettings(DEFAULT_SETTINGS)
     const next = normalizeSettings({
       ...current,
       ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=custom-image-model')),
     })
 
-    expect(next.profiles.find((profile) => profile.id === next.activeProfileId)).toMatchObject({
-      provider: 'openai',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'test-key',
-      model: 'custom-image-model',
-      apiMode: 'images',
-    })
-  })
-
-  it('does not create a duplicate profile for matching legacy URL params', () => {
-    const existingProfile = createDefaultOpenAIProfile({
-      id: 'existing-openai',
-      name: 'Existing OpenAI',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'test-key',
-    })
-    const current = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [createDefaultOpenAIProfile(), existingProfile],
-      activeProfileId: DEFAULT_SETTINGS.activeProfileId,
-    })
-    const next = normalizeSettings({
-      ...current,
-      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1/&apiKey=test-key')),
-    })
-
-    expect(next.profiles).toHaveLength(2)
-    expect(next.activeProfileId).toBe(existingProfile.id)
-  })
-
-  it('creates a separate profile when URL streaming options differ', () => {
-    const existingProfile = createDefaultOpenAIProfile({
-      id: 'existing-openai',
-      name: 'Existing OpenAI',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'test-key',
-      streamImages: true,
-      streamPartialImages: 0,
-    })
-    const current = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [createDefaultOpenAIProfile(), existingProfile],
-      activeProfileId: DEFAULT_SETTINGS.activeProfileId,
-    })
-    const next = normalizeSettings({
-      ...current,
-      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1/&apiKey=test-key&streamImages=true&streamPartialImages=3')),
-    })
-    const activeProfile = next.profiles.find((profile) => profile.id === next.activeProfileId)
-
-    expect(next.profiles).toHaveLength(3)
-    expect(next.activeProfileId).not.toBe(existingProfile.id)
-    expect(activeProfile).toMatchObject({
-      provider: 'openai',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'test-key',
-      streamImages: true,
-      streamPartialImages: 3,
-    })
-  })
-
-  it('creates an OpenAI profile from legacy params even when fal is active', () => {
-    const falProfile = createDefaultFalProfile({ id: 'fal-active', apiKey: 'fal-key' })
-    const current = normalizeSettings({
-      ...DEFAULT_SETTINGS,
-      profiles: [falProfile],
-      activeProfileId: falProfile.id,
-    })
-    const next = normalizeSettings({
-      ...current,
-      ...buildSettingsFromUrlParams(current, new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=openai-key')),
-    })
-
-    expect(next.profiles).toHaveLength(2)
-    expect(next.profiles.find((profile) => profile.id === next.activeProfileId)).toMatchObject({
-      provider: 'openai',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'openai-key',
-    })
+    expect(next.galleryApiKey).toBe('test-key')
   })
 
   it('clears known URL setting params without touching unrelated params', () => {
-    const params = new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=test-model&streamImages=false&streamPartialImages=3&foo=bar')
+    const params = new URLSearchParams('apiUrl=https://api.example.com/v1&apiKey=test-key&model=test-model&foo=bar')
 
     expect(hasUrlSettingParams(params)).toBe(true)
     clearUrlSettingParams(params)
@@ -137,18 +49,8 @@ describe('URL settings params', () => {
           result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
         },
       }],
-      profiles: [{
-        id: 'custom-profile',
-        name: 'Custom Profile',
-        provider: 'custom-json',
-        baseUrl: 'https://api.example.com/v1',
-        apiKey: 'custom-key',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
+      galleryApiKey: 'custom-key',
+      selectedVideoModel: 'kling-v3',
     }
     const params = new URLSearchParams()
     params.set('settings', JSON.stringify(importedSettings))
@@ -160,26 +62,14 @@ describe('URL settings params', () => {
 
     expect(next.customProviders).toHaveLength(1)
     expect(next.customProviders[0]).toMatchObject({ id: 'custom-json', name: 'Custom JSON' })
-    expect(next.activeProfileId).toBe('custom-profile')
-    expect(next.profiles[0]).toMatchObject({
-      id: 'custom-profile',
-      provider: 'custom-json',
-      apiKey: 'custom-key',
-      model: 'custom-model',
-    })
+    expect(next.galleryApiKey).toBe('custom-key')
+    expect(next.selectedVideoModel).toBe('kling-v3')
   })
 
-  it('activates the first profile imported from URL settings when current settings are customized', () => {
+  it('activates imported gallery API key from URL settings when current settings are customized', () => {
     const current = normalizeSettings({
       ...DEFAULT_SETTINGS,
-      profiles: [createDefaultOpenAIProfile({
-        id: 'current-openai',
-        name: 'Current OpenAI',
-        baseUrl: 'https://current.example.com/v1',
-        apiKey: 'current-key',
-        model: 'current-model',
-      })],
-      activeProfileId: 'current-openai',
+      galleryApiKey: 'current-key',
     })
     const importedSettings = {
       customProviders: [{
@@ -193,18 +83,7 @@ describe('URL settings params', () => {
           result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
         },
       }],
-      profiles: [{
-        id: 'custom-profile',
-        name: 'Custom Profile',
-        provider: 'custom-json',
-        baseUrl: 'https://api.example.com/v1',
-        apiKey: 'custom-key',
-        model: 'custom-model',
-        timeout: 300,
-        apiMode: 'images',
-        codexCli: false,
-        apiProxy: false,
-      }],
+      galleryApiKey: 'imported-key',
     }
     const params = new URLSearchParams()
     params.set('settings', JSON.stringify(importedSettings))
@@ -213,15 +92,11 @@ describe('URL settings params', () => {
       ...current,
       ...buildSettingsFromUrlParams(current, params),
     })
-    const activeProfile = next.profiles.find((profile) => profile.id === next.activeProfileId)
 
-    expect(next.activeProfileId).not.toBe('current-openai')
-    expect(activeProfile).toMatchObject({
-      provider: 'custom-json',
-      baseUrl: 'https://api.example.com/v1',
-      apiKey: 'custom-key',
-      model: 'custom-model',
-    })
+    // Current key should be preserved (existing settings take priority)
+    expect(next.galleryApiKey).toBe('current-key')
+    expect(next.customProviders).toHaveLength(1)
+    expect(next.customProviders[0]).toMatchObject({ id: 'custom-json' })
   })
 
   it('imports custom provider settings wrapper from URL params', () => {
@@ -240,18 +115,7 @@ describe('URL settings params', () => {
             result: { imageUrlPaths: ['data.*.url'], b64JsonPaths: [] },
           },
         }],
-        profiles: [{
-          id: 'wrapped-profile',
-          name: 'Wrapped Profile',
-          provider: 'wrapped-custom',
-          baseUrl: 'https://wrapped.example.com/v1',
-          apiKey: 'wrapped-key',
-          model: 'wrapped-model',
-          timeout: 300,
-          apiMode: 'images',
-          codexCli: false,
-          apiProxy: false,
-        }],
+        galleryApiKey: 'wrapped-key',
       },
     }))
 
@@ -262,13 +126,26 @@ describe('URL settings params', () => {
 
     expect(next.customProviders).toHaveLength(1)
     expect(next.customProviders[0]).toMatchObject({ id: 'wrapped-custom', name: 'Wrapped Custom' })
-    expect(next.profiles).toHaveLength(1)
-    expect(next.profiles[0]).toMatchObject({
-      id: 'wrapped-profile',
-      provider: 'wrapped-custom',
-      baseUrl: 'https://wrapped.example.com/v1',
-      apiKey: 'wrapped-key',
-      model: 'wrapped-model',
+    expect(next.galleryApiKey).toBe('wrapped-key')
+  })
+
+  it('imports video API keys from URL settings', () => {
+    const params = new URLSearchParams()
+    params.set('settings', JSON.stringify({
+      videoApiKeys: {
+        'kling-v3': 'kling-key',
+        'viduq3': 'vidu-key',
+      },
+      selectedVideoModel: 'viduq3',
+    }))
+
+    const next = normalizeSettings({
+      ...DEFAULT_SETTINGS,
+      ...buildSettingsFromUrlParams(DEFAULT_SETTINGS, params),
     })
+
+    expect(next.videoApiKeys['kling-v3']).toBe('kling-key')
+    expect(next.videoApiKeys['viduq3']).toBe('vidu-key')
+    expect(next.selectedVideoModel).toBe('viduq3')
   })
 })
