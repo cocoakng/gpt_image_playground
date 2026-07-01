@@ -1,5 +1,5 @@
 import { useEffect, useState, useMemo, useRef } from 'react'
-import { useStore, getCachedImage, ensureImageCached, reuseConfig, editOutputs, removeTask, showCodexCliPrompt, getCodexCliPromptKey, retryTask, retryVideoTask } from '../store'
+import { useStore, getCachedImage, ensureImageCached, reuseConfig, reuseVideoConfig, editOutputs, removeTask, showCodexCliPrompt, getCodexCliPromptKey, retryTask, retryVideoTask } from '../store'
 import { useCloseOnEscape } from '../hooks/useCloseOnEscape'
 import { usePreventBackgroundScroll } from '../hooks/usePreventBackgroundScroll'
 import { useTooltip } from '../hooks/useTooltip'
@@ -254,7 +254,11 @@ export default function DetailModal() {
   }
 
   const handleReuse = () => {
-    reuseConfig(task)
+    if (task.taskType === 'video') {
+      reuseVideoConfig(task)
+    } else {
+      reuseConfig(task)
+    }
     setDetailTaskId(null)
   }
 
@@ -421,7 +425,11 @@ export default function DetailModal() {
   }
 
   const handleRetry = () => {
-    retryTask(task)
+    if (task.taskType === 'video') {
+      retryVideoTask(task)
+    } else {
+      retryTask(task)
+    }
     setDetailTaskId(null)
   }
 

@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds, useStore, removeTask, reuseConfig } from '../store'
+import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds, useStore, removeTask, reuseVideoConfig } from '../store'
 import TaskCard from './TaskCard'
 
 export default function VideoTaskGrid() {
@@ -60,7 +60,7 @@ export default function VideoTaskGrid() {
               key={task.id}
               task={task}
               onClick={() => setDetailTaskId(task.id)}
-              onReuse={() => void reuseConfig(task)}
+              onReuse={() => void reuseVideoConfig(task)}
               onEditOutputs={() => {}}
               onDelete={() => handleDelete(task)}
             />

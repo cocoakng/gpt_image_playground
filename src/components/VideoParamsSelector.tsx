@@ -81,10 +81,11 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'happyhorse-1.0': {
     label: 'happyhorse-1.0',
+    resolution: ['720p'],
     duration: { min: 5, max: 15 },
     ratio: ['16:9', '9:16', '4:3', '3:4', '1:1'],
     audio: false,
-    seed: false,
+    seed: true,
     imageMode: true,
     maxImages: 9,
     modes: ['text', 'image'],
@@ -92,12 +93,25 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
 }
 
-/** 模型选项，从 VIDEO_MODEL_CAPS 动态生成 */
-export const MODEL_OPTIONS = Object.entries(VIDEO_MODEL_CAPS).map(([value, caps]) => ({
-  label: caps.label,
-  value,
-  available: caps.available ?? true,
-}))
+/** 模型选项顺序 */
+const MODEL_OPTIONS_ORDER = [
+  'doubao-seedance-2-0-260128',
+  'doubao-seedance-2-0-fast-260128',
+  'happyhorse-1.0',
+  'kling-v3',
+  'viduq3',
+  'grok-video-3',
+] as const
+
+/** 模型选项 */
+export const MODEL_OPTIONS = MODEL_OPTIONS_ORDER.map((value) => {
+  const caps = VIDEO_MODEL_CAPS[value]!
+  return {
+    label: caps.label,
+    value,
+    available: caps.available ?? true,
+  }
+})
 
 /** 获取模型能力 */
 export function getModelCapsFor(model: string) {
@@ -150,8 +164,38 @@ export default function VideoParamsSelector({ params, onChange, disabled, hideMo
     if (!newCaps.audio) resetParams.generateAudio = undefined
     if (!newCaps.seed) resetParams.seed = undefined
     if (!newCaps.mode) resetParams.klingMode = undefined
-    if (!newCaps.seconds) resetParams.grokSeconds = undefined
-    if (!newCaps.resolution) resetParams.resolution = undefined
+    if (!newCaps.seconds) {
+      // grok 固定秒数 → 其他模型：转成最接近的 duration
+      if (params.grokSeconds && newCaps.duration) {
+        const { min, max } = newCaps.duration
+        const closest = [min, max].includes(params.grokSeconds)
+          ? params.grokSeconds
+          : Math.min(max, Math.max(min, Math.round(params.grokSeconds)))
+        resetParams.duration = closest
+      } else {
+        resetParams.grokSeconds = undefined
+      }
+    } else if (params.grokSeconds) {
+      // 保留 grokSeconds
+      resetParams.duration = undefined
+    }
+    if (!newCaps.resolution) {
+      resetParams.resolution = undefined
+    }
+    // 修正时长超出新模型范围的情况
+    if (newCaps.duration && params.duration) {
+      const { min, max } = newCaps.duration
+      if (params.duration < min) resetParams.duration = min
+      else if (params.duration > max) resetParams.duration = max
+    }
+    // grok 切换到有秒数模型的保留
+    if (newCaps.seconds && params.duration) {
+      const secondsOpts = newCaps.seconds as number[]
+      resetParams.grokSeconds = secondsOpts.includes(params.duration)
+        ? (params.duration as typeof params.grokSeconds)
+        : (secondsOpts[0] as typeof params.grokSeconds)
+      resetParams.duration = undefined
+    }
     onChange({ ...params, model: value, ...resetParams })
   }
 

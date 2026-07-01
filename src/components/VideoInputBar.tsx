@@ -128,11 +128,36 @@ export default function VideoInputBar() {
     }
   }, [currentModel, videoApiKeys, configuredModels.length, showSettings])
 
-  // 当切换视频模型时，同步到 videoParams
+  // 当切换视频模型时，同步到 videoParams 并钳制时长
   useEffect(() => {
-    if (selectedVideoModel) {
-      setVideoParams({ ...videoParams, model: selectedVideoModel })
+    if (!selectedVideoModel) return
+    const caps = getModelCapsFor(selectedVideoModel)
+    const next: typeof videoParams = { ...videoParams, model: selectedVideoModel }
+    // grok 固定秒数 → 其他模型：转成 duration
+    if (caps.duration && videoParams.grokSeconds) {
+      const { min, max } = caps.duration
+      next.duration = [min, max].includes(videoParams.grokSeconds)
+        ? videoParams.grokSeconds
+        : Math.min(max, Math.max(min, Math.round(videoParams.grokSeconds)))
+      delete next.grokSeconds
+    } else if (caps.seconds && videoParams.duration) {
+      // duration → grok 固定秒数
+      const opts = caps.seconds as number[]
+      next.grokSeconds = opts.includes(videoParams.duration)
+        ? (videoParams.duration as typeof videoParams.grokSeconds)
+        : (opts[0] as typeof videoParams.grokSeconds)
+      next.duration = opts[0] as typeof videoParams['duration']
+    } else if (caps.duration && videoParams.duration) {
+      // duration 范围钳制
+      const { min, max } = caps.duration
+      if (videoParams.duration < min) next.duration = min
+      else if (videoParams.duration > max) next.duration = max
     }
+    if (!caps.audio) delete next.generateAudio
+    if (!caps.seed) delete next.seed
+    if (!caps.mode) delete next.klingMode
+    if (!caps.seconds) delete next.grokSeconds
+    setVideoParams(next)
   }, [selectedVideoModel])
 
   const maxImages = modelCaps.maxImages ?? 9

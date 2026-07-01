@@ -632,7 +632,7 @@ function VideoConfigTab() {
   })
 
   const configuredModelValues = new Set(configuredModels.map((m) => m.value))
-  const isCurrentConfigured = configuredModelValues.has(selectedVideoModel)
+  const isCurrentConfigured = configuredModelValues.has(selectedVideoModel as typeof configuredModels[number]['value'])
   const unconfiguredModels = VIDEO_MODEL_OPTIONS.filter((opt) => !configuredModelValues.has(opt.value))
 
   return (
@@ -1872,7 +1872,7 @@ export default function SettingsModal() {
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m5.618-4.016A11.955 11.955 0 0112 2.944a11.955 11.955 0 01-8.618 3.04A12.02 12.02 0 003 9c0 5.591 3.824 10.29 9 11.622 5.176-1.332 9-6.03 9-11.622 0-1.042-.133-2.052-.382-3.016z" />
                   </svg>
                   <div className="text-[13px] leading-relaxed text-gray-500 dark:text-gray-400">
-                    所有的配置、任务和生成的图片均仅保存在您的浏览器本地（除非您使用的服务商存储了它们）。如果您需要清理浏览器站点数据、重置浏览器或使用其他设备，请先导出备份。
+                    所有的配置、任务和生成的<span className="font-semibold text-gray-700 dark:text-gray-200">图片</span>、<span className="font-semibold text-gray-700 dark:text-gray-200">视频</span>均仅保存在您的浏览器本地。导出/导入/清除操作<span className="font-semibold text-blue-600 dark:text-blue-400">同时覆盖图片和视频任务</span>。如果您需要清理浏览器站点数据、重置浏览器或使用其他设备，请先导出备份。
                   </div>
                 </div>
 
@@ -1885,12 +1885,12 @@ export default function SettingsModal() {
                     <Checkbox
                       checked={exportConfig}
                       onChange={setExportConfig}
-                      label="包含配置"
+                      label="包含配置（图片 + 视频 API Key）"
                     />
                     <Checkbox
                       checked={exportTasks}
                       onChange={setExportTasks}
-                      label="包含任务和图片"
+                      label="包含任务、图片与视频"
                     />
                   </div>
                   <button
@@ -1911,12 +1911,12 @@ export default function SettingsModal() {
                     <Checkbox
                       checked={importConfig}
                       onChange={setImportConfig}
-                      label="包含配置"
+                      label="包含配置（图片 + 视频 API Key）"
                     />
                     <Checkbox
                       checked={importTasks}
                       onChange={setImportTasks}
-                      label="包含任务和图片"
+                      label="包含任务、图片与视频"
                     />
                   </div>
                   <button
@@ -1954,13 +1954,13 @@ export default function SettingsModal() {
                     <Checkbox
                       checked={clearConfig}
                       onChange={setClearConfig}
-                      label="包含配置"
+                      label="包含配置（图片 + 视频 API Key）"
                       tone="danger"
                     />
                     <Checkbox
                       checked={clearTasks}
                       onChange={setClearTasks}
-                      label="包含任务和图片"
+                      label="包含任务、图片与视频"
                       tone="danger"
                     />
                   </div>

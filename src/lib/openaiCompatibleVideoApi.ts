@@ -52,25 +52,32 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   // 时长：按文档要求区分字段名和类型
   if (model === 'grok-video-3') {
     body.seconds = String(opts.params.grokSeconds || 10)
-  } else if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
+  } else if (model.startsWith('doubao-seedance')) {
     body.seconds = String(opts.params.duration || 5)
+  } else if (model === 'happyhorse-1.0') {
+    body.duration = opts.params.duration || 5
   } else {
     body.duration = normalizeDuration(opts.params.duration)
   }
 
   // 比例参数：不同模型使用不同字段名
   if (opts.params.ratio && opts.params.ratio !== 'adaptive') {
-    if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
-      body.size = opts.params.ratio
+    if (model.startsWith('doubao-seedance')) {
+      body.ratio = opts.params.ratio
+    } else if (model === 'happyhorse-1.0') {
+      body.ratio = opts.params.ratio
     } else {
       body.aspect_ratio = opts.params.ratio
     }
   }
 
-  // 分辨率：仅 viduq3 / grok 支持
+  // 分辨率：viduq3 / grok 支持 resolution 字段（小写 720p）；seedance / happyhorse 也支持（大写 720P）
   if (opts.params.resolution) {
     if (model === 'viduq3' || model === 'grok-video-3') {
       body.resolution = opts.params.resolution
+    } else if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
+      // API 文档示例使用 720P / 1080P 大写格式
+      body.resolution = opts.params.resolution.toUpperCase()
     }
   }
 
@@ -79,9 +86,9 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
     body.mode = opts.params.klingMode
   }
 
-  // 种子：仅 viduq3 支持
+  // 种子：viduq3 / happyhorse 支持
   if (opts.params.seed != null && opts.params.seed > 0) {
-    if (model === 'viduq3') {
+    if (model === 'viduq3' || model === 'happyhorse-1.0') {
       body.seed = opts.params.seed
     }
   }
@@ -127,6 +134,33 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   const videoUrls = uploadedVideoUrls.map((url) => `video_url:${url}`)
   const audioUrls = uploadedAudioUrls
 
+  // Seedance / Happyhorse 模式字段：根据参考素材数量自动推断
+  if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
+    const imageCount = imageUrls.length
+    const hasVideoRefs = uploadedVideoUrls.length > 0
+    const hasAudioRefs = uploadedAudioUrls.length > 0
+
+    if (model.startsWith('doubao-seedance')) {
+      if (imageCount === 0 && !hasVideoRefs && !hasAudioRefs) {
+        body.mode = 't2v'
+      } else if (imageCount === 1 && !hasVideoRefs && !hasAudioRefs) {
+        body.mode = 'i2v'
+      } else if (imageCount === 2 && !hasVideoRefs && !hasAudioRefs) {
+        body.mode = 'i2v_first_last'
+      } else {
+        body.mode = 'reference_material'
+      }
+    } else if (model === 'happyhorse-1.0') {
+      if (imageCount === 0) {
+        body.mode = 't2v'
+      } else if (imageCount === 1) {
+        body.mode = 'i2v'
+      } else {
+        body.mode = 'r2v'
+      }
+    }
+  }
+
   if (imageUrls.length > 0 || videoUrls.length > 0 || audioUrls.length > 0) {
     if (model === 'kling-v3') {
       // Kling: 1-2 张图用 image_with_roles，3+ 张图用 reference_images
@@ -157,10 +191,9 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
         body.reference_images = refs
       }
     } else if (model === 'happyhorse-1.0') {
-      // Happyhorse：图片 + video_url:前缀视频 放入 reference_images
-      const refs = [...imageUrls, ...videoUrls]
-      if (refs.length > 0) {
-        body.reference_images = refs
+      // Happyhorse：图片放入 images 字段（API spec 使用 images 而非 reference_images）
+      if (imageUrls.length > 0) {
+        body.images = imageUrls
       }
     }
   }

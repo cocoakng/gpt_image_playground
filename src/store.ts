@@ -88,6 +88,8 @@ const AGENT_ROUND_IMAGE_MENTION_RE = /@(?:第)?(\d+)轮图(\d+)/g
 const falRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const customRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const videoRecoveryTimers = new Map<string, ReturnType<typeof setTimeout>>()
+/** 本次 session 中已尝试恢复的视频任务 ID，避免每次刷新都重复请求 */
+const recoveredVideoTaskIds = new Set<string>()
 const openAIWatchdogTimers = new Map<string, ReturnType<typeof setTimeout>>()
 const agentRoundControllers = new Map<string, AbortController>()
 let agentConversationPersistenceReady = false
@@ -2181,6 +2183,7 @@ async function recoverVideoTask(taskId: string) {
 
     updateTaskInStore(taskId, {
       videoUrl: result.videoUrl,
+      videoStoreId: result.videoStoreId,
       coverImageId: coverImageId ?? undefined,
       status: 'done',
       volcengineRecoverable: false,
@@ -2501,6 +2504,17 @@ export async function initStore() {
       task.volcengineTaskId &&
       (task.status === 'running' || task.volcengineRecoverable)
     ) {
+      scheduleVideoRecoveryFn(task.id, 0)
+    }
+    // 尝试恢复之前失败的视频任务（服务端可能已修复，每个 session 只尝试一次）
+    if (
+      task.taskType === 'video' &&
+      task.volcengineTaskId &&
+      task.status === 'error' &&
+      !task.volcengineRecoverable &&
+      !recoveredVideoTaskIds.has(task.id)
+    ) {
+      recoveredVideoTaskIds.add(task.id)
       scheduleVideoRecoveryFn(task.id, 0)
     }
     // 恢复已完成视频任务的 blob URL（blob URL 刷新后失效，需重新生成）
@@ -4938,6 +4952,36 @@ export async function reuseConfig(task: TaskRecord) {
   }
 
   showToast('已复用配置到输入框', 'success')
+}
+
+/** 复用视频任务配置：恢复 prompt、videoParams、模型、参考图到视频输入框 */
+export async function reuseVideoConfig(task: TaskRecord) {
+  const { setVideoParams, setInputImages, setPrompt, showToast } = useStore.getState()
+
+  // 恢复视频参数
+  if (task.videoParams) {
+    setVideoParams(task.videoParams)
+  }
+
+  // 恢复模型选择
+  if (task.videoModel) {
+    setVideoParams({ ...useStore.getState().videoParams, model: task.videoModel })
+  }
+
+  // 恢复输入图片（参考素材）
+  const imgs: InputImage[] = []
+  for (const imgId of task.inputImageIds) {
+    const dataUrl = await ensureImageCached(imgId)
+    if (dataUrl) {
+      imgs.push({ id: imgId, dataUrl })
+    }
+  }
+  setInputImages(imgs)
+
+  // 恢复 prompt
+  setPrompt(task.prompt)
+
+  showToast('已复用视频配置到输入框', 'success')
 }
 
 /** 编辑输出：将输出图加入输入 */
