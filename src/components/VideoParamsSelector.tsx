@@ -59,7 +59,6 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'doubao-seedance-2-0-260128': {
     label: 'doubao-seedance-2-0-260128',
-    available: false,
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -71,7 +70,6 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'doubao-seedance-2-0-fast-260128': {
     label: 'doubao-seedance-2-0-fast-260128',
-    available: false,
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -83,7 +81,6 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'happyhorse-1.0': {
     label: 'happyhorse-1.0',
-    available: false,
     duration: { min: 5, max: 15 },
     ratio: ['16:9', '9:16', '4:3', '3:4', '1:1'],
     audio: false,

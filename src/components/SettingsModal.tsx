@@ -689,21 +689,24 @@ function VideoConfigTab() {
         <span className="mb-1.5 block text-sm text-gray-600 dark:text-gray-300">
           {isCurrentConfigured ? '添加新模型配置' : '选择要配置的模型'}
         </span>
-        <select
-          key={`${selectedVideoModel}-${isCurrentConfigured ? 'c' : 'n'}`}
-          value={selectedVideoModel}
-          onChange={(e) => handleModelChange(e.target.value)}
-          className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 appearance-none"
-        >
-          {isCurrentConfigured && (
-            <option value={selectedVideoModel} disabled>
-              {VIDEO_MODEL_OPTIONS.find((o) => o.value === selectedVideoModel)?.label || selectedVideoModel}（当前编辑）
-            </option>
-          )}
-          {unconfiguredModels.map((opt) => (
-            <option key={opt.value} value={opt.value}>{opt.label}</option>
-          ))}
-        </select>
+        <div className="relative">
+          <select
+            key={`${selectedVideoModel}-${isCurrentConfigured ? 'c' : 'n'}`}
+            value={selectedVideoModel}
+            onChange={(e) => handleModelChange(e.target.value)}
+            className="w-full rounded-xl border border-gray-200/70 bg-white/60 px-3 py-2.5 pr-8 text-sm text-gray-700 outline-none transition focus:border-blue-300 dark:border-white/[0.08] dark:bg-white/[0.03] dark:text-gray-200 dark:focus:border-blue-500/50 appearance-none cursor-pointer"
+          >
+            {isCurrentConfigured && (
+              <option value={selectedVideoModel} disabled>
+                {VIDEO_MODEL_OPTIONS.find((o) => o.value === selectedVideoModel)?.label || selectedVideoModel}（当前编辑）
+              </option>
+            )}
+            {unconfiguredModels.map((opt) => (
+              <option key={opt.value} value={opt.value}>{opt.label}</option>
+            ))}
+          </select>
+          <ChevronDownIcon className="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400 dark:text-gray-500" />
+        </div>
       </label>
 
       {/* API Key */}
