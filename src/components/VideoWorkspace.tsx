@@ -41,7 +41,7 @@ export default function VideoWorkspace() {
   }
 
   return (
-    <main data-home-main data-drag-select-surface className="pb-48">
+    <main data-home-main data-drag-select-surface className="pb-96">
       <div className="safe-area-x max-w-7xl mx-auto">
         <SearchBar />
         {filterFavorite && !activeFavoriteCollectionId ? <FavoriteCollectionsView /> : <VideoTaskGrid />}

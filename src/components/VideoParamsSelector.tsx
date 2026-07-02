@@ -48,7 +48,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   'grok-video-3': {
     label: 'grok-video-3',
     resolution: ['480p', '720p'],
-    seconds: [6, 10, 15],
+    seconds: [6, 10],
     ratio: ['16:9', '9:16', '3:2', '2:3', '1:1'],
     audio: false,
     seed: false,
@@ -59,6 +59,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
   },
   'doubao-seedance-2-0-260128': {
     label: 'doubao-seedance-2-0-260128',
+    resolution: ['720p'],
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -66,10 +67,11 @@ const VIDEO_MODEL_CAPS: Record<string, {
     imageMode: true,
     maxImages: 9,
     modes: ['text', 'image', 'multi'],
-    frameMode: 'reference',
+    frameMode: 'start-end',
   },
   'doubao-seedance-2-0-fast-260128': {
     label: 'doubao-seedance-2-0-fast-260128',
+    resolution: ['720p'],
     duration: { min: 4, max: 15 },
     ratio: ['21:9', '16:9', '4:3', '1:1', '3:4', '9:16'],
     audio: true,
@@ -77,7 +79,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
     imageMode: true,
     maxImages: 9,
     modes: ['text', 'image', 'multi'],
-    frameMode: 'reference',
+    frameMode: 'start-end',
   },
   'happyhorse-1.0': {
     label: 'happyhorse-1.0',
@@ -88,7 +90,7 @@ const VIDEO_MODEL_CAPS: Record<string, {
     seed: true,
     imageMode: true,
     maxImages: 9,
-    modes: ['text', 'image'],
+    modes: ['text', 'image', 'multi'],
     frameMode: 'reference',
   },
 }

@@ -5001,6 +5001,71 @@ export async function editOutputs(task: TaskRecord) {
   showToast(`已添加 ${added} 张输出图到输入`, 'success')
 }
 
+/** 编辑视频输出：将视频文件加入参考视频，并恢复视频任务配置 */
+export async function editVideoOutputs(task: TaskRecord) {
+  const { referenceVideos, setVideoParams, setPrompt, showToast } = useStore.getState()
+
+  // 恢复视频参数和模型
+  if (task.videoParams) {
+    setVideoParams(task.videoParams)
+  }
+  if (task.videoModel) {
+    setVideoParams({ ...useStore.getState().videoParams, model: task.videoModel })
+  }
+
+  // 恢复 prompt
+  setPrompt(task.prompt)
+
+  // 将视频文件加入参考视频
+  if (task.videoStoreId) {
+    const stored = await getVideo(task.videoStoreId)
+    if (stored) {
+      const blobUrl = URL.createObjectURL(stored.blob)
+      const id = `ref_video_${Date.now()}`
+
+      // 从 blob 提取首帧缩略图
+      let thumbnailDataUrl: string | undefined
+      try {
+        const { extractVideoCover } = await import('./lib/openaiCompatibleVideoApi')
+        thumbnailDataUrl = await extractVideoCover(stored.blob)
+      } catch {
+        // 忽略缩略图提取失败
+      }
+
+      const videoRef: VideoReference = {
+        id: task.videoStoreId!,  // 用 videoStoreId 作为 id，用于去重
+        dataUrl: blobUrl,
+        thumbnailDataUrl,
+        fileName: `video_${task.id}.mp4`,
+        duration: 0,
+      }
+
+      // 尝试获取真实时长
+      try {
+        const video = document.createElement('video')
+        video.preload = 'metadata'
+        video.src = blobUrl
+        await new Promise<void>((resolve, reject) => {
+          video.onloadedmetadata = () => { videoRef.duration = video.duration; resolve() }
+          video.onerror = () => reject(new Error('video load error'))
+          setTimeout(() => resolve(), 2000)
+        })
+      } catch {
+        // 忽略
+      }
+
+      const alreadyInInput = referenceVideos.find((v) => v.id === task.videoStoreId)
+      if (!alreadyInInput) {
+        useStore.setState({ referenceVideos: [...referenceVideos, videoRef] })
+        showToast('已将视频添加到参考视频', 'success')
+        return
+      }
+    }
+  }
+
+  showToast('已加载视频任务配置', 'success')
+}
+
 /** 删除多条任务 */
 export async function removeMultipleTasks(taskIds: string[]) {
   const { tasks, setTasks, inputImages, galleryInputDraft, showToast, clearSelection, selectedTaskIds } = useStore.getState()

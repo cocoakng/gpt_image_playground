@@ -49,62 +49,7 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
   // 根据模型类型映射参数
   const model = opts.params.model || opts.model || ''
 
-  // 时长：按文档要求区分字段名和类型
-  if (model === 'grok-video-3') {
-    body.seconds = String(opts.params.grokSeconds || 10)
-  } else if (model.startsWith('doubao-seedance')) {
-    body.seconds = String(opts.params.duration || 5)
-  } else if (model === 'happyhorse-1.0') {
-    body.duration = opts.params.duration || 5
-  } else {
-    body.duration = normalizeDuration(opts.params.duration)
-  }
-
-  // 比例参数：不同模型使用不同字段名
-  if (opts.params.ratio && opts.params.ratio !== 'adaptive') {
-    if (model.startsWith('doubao-seedance')) {
-      body.ratio = opts.params.ratio
-    } else if (model === 'happyhorse-1.0') {
-      body.ratio = opts.params.ratio
-    } else {
-      body.aspect_ratio = opts.params.ratio
-    }
-  }
-
-  // 分辨率：viduq3 / grok 支持 resolution 字段（小写 720p）；seedance / happyhorse 也支持（大写 720P）
-  if (opts.params.resolution) {
-    if (model === 'viduq3' || model === 'grok-video-3') {
-      body.resolution = opts.params.resolution
-    } else if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
-      // API 文档示例使用 720P / 1080P 大写格式
-      body.resolution = opts.params.resolution.toUpperCase()
-    }
-  }
-
-  // Kling 模式
-  if (opts.params.klingMode) {
-    body.mode = opts.params.klingMode
-  }
-
-  // 种子：viduq3 / happyhorse 支持
-  if (opts.params.seed != null && opts.params.seed > 0) {
-    if (model === 'viduq3' || model === 'happyhorse-1.0') {
-      body.seed = opts.params.seed
-    }
-  }
-
-  // 音频
-  if (opts.params.generateAudio != null) {
-    if (model === 'kling-v3') {
-      body.audio = opts.params.generateAudio
-    } else if (model === 'viduq3') {
-      body.audio = opts.params.generateAudio
-    } else if (model.startsWith('doubao-seedance')) {
-      body.generate_audio = opts.params.generateAudio
-    }
-  }
-
-  // 上传参考素材获取公网 URL（文档要求必须为公网可访问 URL）
+  // ===== 先上传所有参考素材（所有模型都需要） =====
   const uploadedImageUrls = opts.inputImages?.length
     ? await Promise.all(
         opts.inputImages.map((img) =>
@@ -129,42 +74,153 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
       )
     : []
 
-  // 参考素材（图片 / 视频 / 音频）按模型要求映射字段名
-  const imageUrls = uploadedImageUrls
-  const videoUrls = uploadedVideoUrls.map((url) => `video_url:${url}`)
-  const audioUrls = uploadedAudioUrls
+  // ===== happyhorse-1.0: 扁平结构 + content 数组（Sora 兼容格式） =====
+  if (model === 'happyhorse-1.0') {
+    // 顶层参数
+    body.resolution = (opts.params.resolution || '720p').toUpperCase()
+    if (opts.params.duration) body.duration = opts.params.duration
+    if (opts.params.ratio && opts.params.ratio !== 'adaptive') body.ratio = opts.params.ratio
+    if (opts.params.seed != null && opts.params.seed > 0) body.seed = opts.params.seed
 
-  // Seedance / Happyhorse 模式字段：根据参考素材数量自动推断
-  if (model.startsWith('doubao-seedance') || model === 'happyhorse-1.0') {
-    const imageCount = imageUrls.length
+    // 构建 content 数组（Sora 兼容格式）
+    const content: Array<Record<string, unknown>> = []
+    content.push({ type: 'text', text: opts.prompt })
+
+    for (const url of uploadedImageUrls) {
+      content.push({ type: 'image_url', image_url: { url } })
+    }
+    for (const url of uploadedVideoUrls) {
+      content.push({ type: 'video_url', video_url: { url } })
+    }
+    body.content = content
+
+    // 自动推断 mode
+    const imageCount = uploadedImageUrls.length
+    const hasVideoRefs = uploadedVideoUrls.length > 0
+    if (hasVideoRefs) {
+      body.mode = 'video_edit'
+    } else if (imageCount === 0) {
+      body.mode = 't2v'
+    } else if (imageCount === 1) {
+      body.mode = 'i2v'
+    } else {
+      body.mode = 'r2v'
+    }
+  }
+  // ===== doubao-seedance 模型 =====
+  else if (model.startsWith('doubao-seedance')) {
+    body.prompt = opts.prompt
+    body.seconds = String(opts.params.duration || 5)
+
+    if (opts.params.ratio && opts.params.ratio !== 'adaptive') body.ratio = opts.params.ratio
+    if (opts.params.resolution) body.resolution = opts.params.resolution.toUpperCase()
+    if (opts.params.generateAudio != null) body.generate_audio = opts.params.generateAudio
+
     const hasVideoRefs = uploadedVideoUrls.length > 0
     const hasAudioRefs = uploadedAudioUrls.length > 0
+    const imageCount = uploadedImageUrls.length
 
-    if (model.startsWith('doubao-seedance')) {
+    // 当有视频/音频参考或多张图片时，使用 content 数组模式（推荐）
+    if (hasVideoRefs || hasAudioRefs || imageCount > 2) {
+      body.mode = 'reference_material'
+
+      const content: Array<Record<string, unknown>> = []
+      content.push({ type: 'text', text: opts.prompt })
+
+      for (const url of uploadedImageUrls) {
+        content.push({
+          type: 'image_url',
+          image_url: { url },
+          role: 'reference_image',
+          name: String(content.length),
+        })
+      }
+      for (const url of uploadedVideoUrls) {
+        content.push({
+          type: 'video_url',
+          video_url: { url },
+          role: 'reference_video',
+          name: String(content.length),
+        })
+      }
+      for (const url of uploadedAudioUrls) {
+        content.push({
+          type: 'audio_url',
+          audio_url: { url },
+          role: 'reference_audio',
+          name: String(content.length),
+        })
+      }
+      body.content = content
+    } else {
+      // 传统字段模式
       if (imageCount === 0 && !hasVideoRefs && !hasAudioRefs) {
         body.mode = 't2v'
       } else if (imageCount === 1 && !hasVideoRefs && !hasAudioRefs) {
         body.mode = 'i2v'
+        body.image_urls = uploadedImageUrls
       } else if (imageCount === 2 && !hasVideoRefs && !hasAudioRefs) {
         body.mode = 'i2v_first_last'
-      } else {
-        body.mode = 'reference_material'
+        body.image_urls = uploadedImageUrls
+      } else if (imageCount > 0) {
+        body.mode = 'reference_images'
+        body.reference_images = uploadedImageUrls
       }
-    } else if (model === 'happyhorse-1.0') {
-      if (imageCount === 0) {
-        body.mode = 't2v'
-      } else if (imageCount === 1) {
-        body.mode = 'i2v'
-      } else {
-        body.mode = 'r2v'
+      // 有少量视频/音频参考时，附加到 reference_images
+      if ((hasVideoRefs || hasAudioRefs) && imageCount <= 2) {
+        const refs = [...uploadedImageUrls, ...uploadedVideoUrls.map(u => `video_url:${u}`), ...uploadedAudioUrls]
+        if (refs.length > 0) {
+          body.reference_images = refs
+        }
       }
     }
   }
+  // ===== 其他模型（kling/vidu/grok）保持原有逻辑 =====
+  else {
+    // 时长
+    if (model === 'grok-video-3') {
+      body.seconds = String(opts.params.grokSeconds || 10)
+    } else {
+      body.duration = normalizeDuration(opts.params.duration)
+    }
 
-  if (imageUrls.length > 0 || videoUrls.length > 0 || audioUrls.length > 0) {
-    if (model === 'kling-v3') {
-      // Kling: 1-2 张图用 image_with_roles，3+ 张图用 reference_images
-      if (imageUrls.length > 0) {
+    // 比例
+    if (opts.params.ratio && opts.params.ratio !== 'adaptive') {
+      body.aspect_ratio = opts.params.ratio
+    }
+
+    // 分辨率
+    if (opts.params.resolution) {
+      if (model === 'viduq3' || model === 'grok-video-3') {
+        body.resolution = opts.params.resolution
+      }
+    }
+
+    // Kling 模式
+    if (opts.params.klingMode) {
+      body.mode = opts.params.klingMode
+    }
+
+    // 种子
+    if (opts.params.seed != null && opts.params.seed > 0) {
+      if (model === 'viduq3') {
+        body.seed = opts.params.seed
+      }
+    }
+
+    // 音频
+    if (opts.params.generateAudio != null) {
+      if (model === 'kling-v3') {
+        body.audio = opts.params.generateAudio
+      } else if (model === 'viduq3') {
+        body.audio = opts.params.generateAudio
+      }
+    }
+
+    // 参考素材
+    const imageUrls = uploadedImageUrls
+    if (imageUrls.length > 0) {
+      if (model === 'kling-v3') {
         if (imageUrls.length <= 2) {
           body.image_with_roles = imageUrls.map((url, idx) => {
             const role = imageUrls.length === 1
@@ -175,24 +231,9 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
         } else {
           body.reference_images = imageUrls
         }
-      }
-    } else if (model === 'viduq3') {
-      if (imageUrls.length > 0) {
+      } else if (model === 'viduq3') {
         body.image_urls = imageUrls
-      }
-    } else if (model === 'grok-video-3') {
-      if (imageUrls.length > 0) {
-        body.images = imageUrls
-      }
-    } else if (model.startsWith('doubao-seedance')) {
-      // 豆包：图片 + video_url:前缀视频 + base64音频 统一放入 reference_images
-      const refs = [...imageUrls, ...videoUrls, ...audioUrls]
-      if (refs.length > 0) {
-        body.reference_images = refs
-      }
-    } else if (model === 'happyhorse-1.0') {
-      // Happyhorse：图片放入 images 字段（API spec 使用 images 而非 reference_images）
-      if (imageUrls.length > 0) {
+      } else if (model === 'grok-video-3') {
         body.images = imageUrls
       }
     }

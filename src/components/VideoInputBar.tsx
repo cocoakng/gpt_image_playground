@@ -321,9 +321,9 @@ export default function VideoInputBar() {
     return `图${idx + 1}`
   }
 
-  // 图生视频模式下的帧角色标记 - 根据模型 frameMode 决定
+  // 图生视频/多模态模式下的帧角色标记 - 根据模型 frameMode 决定
   const frameBadge = (idx: number) => {
-    if (!isImageMode) return null
+    if (!isImageMode && !isMultiMode) return null
     if (modelCaps.frameMode !== 'start-end') return null
     if (inputImages.length === 1) return '首帧'
     if (inputImages.length === 2) return idx === 0 ? '首帧' : '尾帧'
@@ -436,7 +436,7 @@ export default function VideoInputBar() {
         : '描述参考素材的组合效果...'
 
   return (
-    <div data-video-input-bar className="fixed bottom-4 sm:bottom-6 left-1/2 -translate-x-1/2 z-30 w-full max-w-4xl px-3 sm:px-4 transition-all duration-300">
+    <div data-video-input-bar className="fixed bottom-0 sm:bottom-2 left-1/2 -translate-x-1/2 z-40 w-full max-w-4xl px-3 sm:px-4 transition-all duration-300">
       <div className="bg-white/70 dark:bg-gray-900/70 backdrop-blur-2xl border border-white/50 dark:border-white/[0.08] shadow-[0_8px_30px_rgb(0,0,0,0.08)] dark:shadow-[0_8px_30px_rgb(0,0,0,0.3)] rounded-2xl sm:rounded-3xl p-3 sm:p-4 ring-1 ring-black/5 dark:ring-white/10">
         {/* Mode selector tabs */}
         <div className="mb-3 flex items-center gap-2">
@@ -556,91 +556,24 @@ export default function VideoInputBar() {
           </div>
         )}
 
-        {/* Multi mode: video references - always show */}
+        {/* Multi mode: video references - 即将上线 */}
         {isMultiMode && (
           <div className="mb-2">
             <div className="flex items-center gap-2 overflow-x-auto pb-1">
-              {referenceVideos.map((vid, idx) => {
-                const isDragging = videoDragIndex === idx
-                const isLast = idx === referenceVideos.length - 1
-                const showDropBefore = videoDragOverIndex === idx && videoDragIndex !== idx
-                const showDropAfter = videoDragOverIndex === referenceVideos.length && isLast && videoDragIndex !== idx
-                return (
-                  <div
-                    key={vid.id}
-                    className="relative group shrink-0"
-                    draggable
-                    onDragStart={(e) => handleVideoDragStart(e, idx)}
-                    onDragOver={(e) => handleVideoDragOver(e, idx)}
-                    onDrop={handleVideoDrop}
-                    onDragEnd={resetVideoDrag}
-                  >
-                    {showDropBefore && (
-                      <div className="absolute -left-[3px] top-0 bottom-0 w-[2px] bg-blue-500 rounded-full z-40 shadow-sm pointer-events-none" />
-                    )}
-                    {showDropAfter && (
-                      <div className="absolute -right-[3px] top-0 bottom-0 w-[2px] bg-blue-500 rounded-full z-40 shadow-sm pointer-events-none" />
-                    )}
-                    <div className="relative group/video">
-                      <div className={`h-20 w-28 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 bg-gray-100 dark:bg-white/5 flex items-center justify-center transition-opacity ${isDragging ? 'opacity-40' : ''}`}>
-                        {vid.thumbnailDataUrl ? (
-                          <img src={vid.thumbnailDataUrl} alt="" className="w-full h-full object-cover" />
-                        ) : (
-                          <svg className="h-8 w-8 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
-                            <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 10.5l4.72-4.72a.75.75 0 011.28.53v11.38a.75.75 0 01-1.28.53l-4.72-4.72M4.5 18.75h9.75M4.5 5.25h9.75" />
-                          </svg>
-                        )}
-                      </div>
-                      <span className="absolute bottom-0.5 right-0.5 text-[9px] text-white bg-black/60 rounded px-1 leading-tight">
-                        {vid.duration.toFixed(1)}s
-                      </span>
-                      {/* 编辑按钮 */}
-                      <button
-                        type="button"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          replaceVideoTargetRef.current = idx
-                          replaceVideoFileInputRef.current?.click()
-                        }}
-                        className="absolute inset-0 w-full h-full bg-black/40 opacity-0 group-hover/video:opacity-100 transition-opacity flex items-center justify-center cursor-pointer z-20 focus:outline-none border-none"
-                        title="替换"
-                      >
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" />
-                        </svg>
-                      </button>
-                    </div>
-                    <span className="absolute -top-4 left-0 text-[10px] text-gray-400 dark:text-gray-500">视频{idx + 1}</span>
-                    <button
-                      type="button"
-                      onClick={() => removeVideoReference(idx)}
-                      className="absolute -top-1 -right-1 h-4 w-4 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity text-xs leading-none"
-                      title="移除"
-                    >
-                      ×
-                    </button>
-                  </div>
-                )
-              })}
-              {referenceVideos.length < MAX_VIDEOS && videoTotalDuration < MAX_TOTAL_DURATION && (
+              <div className="relative shrink-0">
                 <button
                   type="button"
-                  onClick={() => videoFileInputRef.current?.click()}
-                  className="shrink-0 h-20 w-28 rounded-lg border border-dashed border-gray-300 dark:border-white/[0.12] flex flex-col items-center justify-center gap-0.5 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 hover:border-gray-400 dark:hover:border-white/[0.2] transition-colors"
-                  title="添加视频"
+                  disabled
+                  className="h-20 w-28 rounded-lg border border-dashed border-gray-300 dark:border-white/[0.12] flex flex-col items-center justify-center gap-0.5 text-gray-400 transition-colors cursor-not-allowed opacity-60"
                 >
                   <svg className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={1.5}>
                     <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
                   </svg>
-                  {referenceVideos.length === 0 && <span className="text-[10px]">视频</span>}
+                  <span className="text-[10px]">视频</span>
                 </button>
-              )}
-            </div>
-            {(referenceVideos.length > 0 || referenceAudios.length > 0) && (
-              <div className="text-[10px] text-gray-400 mt-0.5">
-                视频总时长 {videoTotalDuration.toFixed(1)}s / {MAX_TOTAL_DURATION}s
+                <span className="absolute top-1 right-1 rounded bg-orange-500 px-1 py-0.5 text-[8px] font-semibold text-white leading-none">即将上线</span>
               </div>
-            )}
+            </div>
           </div>
         )}
 

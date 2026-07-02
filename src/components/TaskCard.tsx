@@ -845,7 +845,7 @@ export default function TaskCard({
                 tooltip="编辑输出"
                 onClick={onEditOutputs}
                 className="p-1.5 rounded-md hover:bg-green-50 dark:hover:bg-green-950/30 text-gray-400 hover:text-green-500 transition disabled:opacity-30"
-                disabled={!task.outputImages?.length}
+                disabled={!task.outputImages?.length && !task.videoStoreId && !task.coverImageId}
               >
                 <svg
                   className="w-4 h-4"

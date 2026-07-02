@@ -1,5 +1,5 @@
 import { useMemo, useRef } from 'react'
-import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds, useStore, removeTask, reuseVideoConfig } from '../store'
+import { ALL_FAVORITES_COLLECTION_ID, getTaskFavoriteCollectionIds, useStore, removeTask, reuseVideoConfig, editVideoOutputs } from '../store'
 import TaskCard from './TaskCard'
 
 export default function VideoTaskGrid() {
@@ -43,6 +43,10 @@ export default function VideoTaskGrid() {
     })
   }
 
+  const handleEditOutputs = (task: typeof tasks[number]) => {
+    void editVideoOutputs(task)
+  }
+
   return (
     <div ref={rootRef} className="min-h-[300px]">
       {filteredTasks.length === 0 ? (
@@ -61,7 +65,7 @@ export default function VideoTaskGrid() {
               task={task}
               onClick={() => setDetailTaskId(task.id)}
               onReuse={() => void reuseVideoConfig(task)}
-              onEditOutputs={() => {}}
+              onEditOutputs={() => handleEditOutputs(task)}
               onDelete={() => handleDelete(task)}
             />
           ))}
