@@ -4466,6 +4466,7 @@ async function executeTask(taskId: string) {
 
     const result = await callImageApi({
       settings: requestSettings,
+      profile: activeProfile,
       prompt: replaceImageMentionsForApi(task.prompt, inputDataUrls.length),
       params: task.params,
       inputImageDataUrls: inputDataUrls,

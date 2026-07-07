@@ -1,4 +1,4 @@
-import type { AppSettings, TaskParams } from '../types'
+import type { ApiProfile, AppSettings, TaskParams } from '../types'
 
 export const MIME_MAP: Record<string, string> = {
   png: 'image/png',
@@ -82,6 +82,8 @@ async function tryPngCompression(canvas: HTMLCanvasElement, limitBytes: number):
 
 export interface CallApiOptions {
   settings: AppSettings
+  /** Optional pre-built profile. If provided, used directly instead of deriving from settings. */
+  profile?: ApiProfile
   prompt: string
   params: TaskParams
   /** 输入图片的 data URL 列表 */

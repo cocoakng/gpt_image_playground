@@ -52,7 +52,7 @@ async function callFalAiImageApiConcurrent(opts: CallApiOptions, profile: Parame
 }
 
 export async function callImageApi(opts: CallApiOptions): Promise<CallApiResult> {
-  const profile = getActiveApiProfile(opts.settings)
+  const profile = opts.profile ?? getActiveApiProfile(opts.settings)
   if (profile.provider === 'fal') {
     const n = opts.params.n > 0 ? opts.params.n : 1
     if (n > 1) {

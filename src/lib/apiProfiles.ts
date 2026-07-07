@@ -360,7 +360,7 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     apiMode: 'images',
     codexCli: false,
     apiProxy: DEFAULT_OPENAI_API_PROXY,
-    streamImages: true,
+    streamImages: false,
     streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
     ...overrides,
   }
@@ -773,7 +773,7 @@ export function getActiveApiProfile(settings: Partial<AppSettings> | unknown): A
     ...profile,
     baseUrl: typeof record.baseUrl === 'string' ? record.baseUrl : profile.baseUrl,
     apiKey: profile.apiKey,
-    model: typeof record.model === 'string' && record.model.trim() ? record.model : profile.model,
+    // model 不覆盖：画廊固定 gpt-image-2，避免旧版 settings.model 污染
     timeout: typeof record.timeout === 'number' && Number.isFinite(record.timeout) ? record.timeout : profile.timeout,
     apiMode: record.apiMode === 'images' || record.apiMode === 'responses' ? record.apiMode : profile.apiMode,
     codexCli: typeof record.codexCli === 'boolean' ? record.codexCli : profile.codexCli,
