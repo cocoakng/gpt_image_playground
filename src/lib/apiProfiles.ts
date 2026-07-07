@@ -360,7 +360,7 @@ export function createDefaultOpenAIProfile(overrides: Partial<ApiProfile> = {}):
     apiMode: 'images',
     codexCli: false,
     apiProxy: DEFAULT_OPENAI_API_PROXY,
-    streamImages: false,
+    streamImages: true,
     streamPartialImages: DEFAULT_STREAM_PARTIAL_IMAGES,
     ...overrides,
   }
