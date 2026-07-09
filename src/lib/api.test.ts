@@ -132,7 +132,6 @@ describe('callImageApi', () => {
     const body = JSON.parse(String((init as RequestInit).body))
     expect(body).toMatchObject({
       stream: true,
-      partial_images: 3,
     })
     expect(partialImages).toEqual(['data:image/png;base64,cGFydGlhbA=='])
     expect(result).toMatchObject({
@@ -263,7 +262,6 @@ describe('callImageApi', () => {
       const body = JSON.parse(String((init as RequestInit).body))
       expect(body.n).toBeUndefined()
       expect(body.stream).toBe(true)
-      expect(body.partial_images).toBe(1)
     }
     expect(result.images).toHaveLength(2)
     expect(result.images).toEqual([
@@ -310,7 +308,6 @@ describe('callImageApi', () => {
     const [, init] = fetchMock.mock.calls[0]
     const body = JSON.parse(String((init as RequestInit).body))
     expect(body.stream).toBe(true)
-    expect(body.tools[0].partial_images).toBe(1)
     expect(partialImages).toEqual(['data:image/png;base64,cGFydGlhbA=='])
     expect(result).toMatchObject({
       images: ['data:image/png;base64,ZmluYWw='],

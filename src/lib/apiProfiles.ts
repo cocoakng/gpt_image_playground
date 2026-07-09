@@ -34,7 +34,7 @@ export const DEFAULT_OPENAI_PROFILE_ID = 'default-openai'
 export const DEFAULT_VOLCENGINE_BASE_URL = 'https://ark.cn-beijing.volces.com/api/v3'
 export const DEFAULT_VOLCENGINE_MODEL = 'doubao-seedance-1-0-pro'
 export const DEFAULT_VOLCENGINE_PROFILE_ID = 'default-volcengine'
-export const DEFAULT_API_TIMEOUT = 600
+export const DEFAULT_API_TIMEOUT = 1800
 
 export const DEFAULT_VIDEO_PARAMS: VideoParams = {
   resolution: '720p',
@@ -104,8 +104,6 @@ const DEFAULT_GENERATE_BODY = {
   size: '$params.size',
   quality: '$params.quality',
   output_format: '$params.output_format',
-  moderation: '$params.moderation',
-  output_compression: '$params.output_compression',
   n: '$params.n',
 }
 const DEFAULT_EDIT_BODY = DEFAULT_GENERATE_BODY

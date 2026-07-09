@@ -732,9 +732,6 @@ export default function InputBar() {
     }
   }, [updateInputBarClearance])
   const imageHintTimerRef = useRef<number | null>(null)
-  const [outputCompressionInput, setOutputCompressionInput] = useState(
-    params.output_compression == null ? '' : String(params.output_compression),
-  )
   const [nInput, setNInput] = useState(String(params.n))
   const [nInputFocused, setNInputFocused] = useState(false)
   const dragCounter = useRef(0)
@@ -781,8 +778,6 @@ export default function InputBar() {
   const activeProvider = activeProfile.provider
   const isFalProvider = activeProvider === 'fal'
   const agentAutoImageCount = appMode === 'agent' && activeProfile.provider === 'openai' && activeProfile.apiMode === 'responses'
-  const moderationDisabled = isFalProvider
-  const compressionDisabled = params.output_format === 'png' || isFalProvider
   const outputImageLimit = getOutputImageLimitForSettings(effectiveSettings)
   const isFalTextToImage = isFalProvider && inputImages.length === 0
   const nDraftValue = Number(nInput)
@@ -799,20 +794,18 @@ export default function InputBar() {
 
   const qualityOptions = isFalProvider
     ? [
-        { label: 'low', value: 'low' },
-        { label: 'medium', value: 'medium' },
-        { label: 'high', value: 'high' },
+        { label: 'low (1K)', value: 'low' },
+        { label: 'medium (2K)', value: 'medium' },
+        { label: 'high (4K)', value: 'high' },
       ]
     : [
         { label: 'auto', value: 'auto' },
-        { label: 'low', value: 'low' },
-        { label: 'medium', value: 'medium' },
-        { label: 'high', value: 'high' },
+        { label: 'low (1K)', value: 'low' },
+        { label: 'medium (2K)', value: 'medium' },
+        { label: 'high (4K)', value: 'high' },
       ]
   const atImageLimit = inputImages.length >= API_MAX_IMAGES
   const uploadImageTooltipText = atImageLimit ? `参考图数量已达上限（${API_MAX_IMAGES} 张），无法继续添加` : '上传图片'
-  const compressionHint = useHintTooltip({ enabled: () => compressionDisabled })
-  const moderationHint = useHintTooltip({ enabled: () => moderationDisabled })
   const sizeHint = useHintTooltip({ enabled: () => isFalTextToImage })
   const qualityHint = useHintTooltip({ enabled: () => settings.codexCli || isFalProvider })
   const nLimitHint = useHintTooltip({ autoHideMs: 2000 })
@@ -936,12 +929,6 @@ export default function InputBar() {
   }, [setPrompt])
 
   useEffect(() => {
-    setOutputCompressionInput(
-      params.output_compression == null ? '' : String(params.output_compression),
-    )
-  }, [params.output_compression])
-
-  useEffect(() => {
     setNInput(agentAutoImageCount ? 'auto' : String(params.n))
   }, [agentAutoImageCount, params.n])
 
@@ -979,23 +966,6 @@ export default function InputBar() {
       cancelled = true
     }
   }, [maskDraft, maskTargetImage?.id, maskTargetImage?.dataUrl])
-
-  const commitOutputCompression = useCallback(() => {
-    if (outputCompressionInput.trim() === '') {
-      setOutputCompressionInput('')
-      setParams({ output_compression: null })
-      return
-    }
-
-    const nextValue = Number(outputCompressionInput)
-    if (Number.isNaN(nextValue)) {
-      setOutputCompressionInput(params.output_compression == null ? '' : String(params.output_compression))
-      return
-    }
-
-    setOutputCompressionInput(String(nextValue))
-    setParams({ output_compression: nextValue })
-  }, [outputCompressionInput, params.output_compression, setParams])
 
   const commitN = useCallback(() => {
     nLimitHint.hide()
@@ -1992,65 +1962,6 @@ export default function InputBar() {
             { label: 'WebP', value: 'webp' },
           ]}
           className={selectClass}
-        />
-      </label>
-      <label
-        className="relative flex flex-col gap-0.5"
-        onMouseEnter={compressionHint.show}
-        onMouseLeave={compressionHint.hide}
-        onTouchStart={compressionHint.startTouch}
-        onTouchEnd={compressionHint.clearTimer}
-        onTouchCancel={compressionHint.hide}
-        onClick={compressionHint.show}
-      >
-        <span className="text-gray-400 dark:text-gray-500 ml-1">压缩率</span>
-        <input
-          value={outputCompressionInput}
-          onChange={(e) => setOutputCompressionInput(e.target.value)}
-          onBlur={commitOutputCompression}
-          disabled={compressionDisabled}
-          type="number"
-          min={0}
-          max={100}
-          placeholder="0-100"
-          className={`px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] focus:outline-none text-xs transition-all duration-200 shadow-sm ${
-            compressionDisabled
-              ? 'bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed'
-              : 'bg-white/50 dark:bg-white/[0.03]'
-            }`}
-        />
-        <ButtonTooltip
-          visible={compressionHint.visible}
-          text={isFalProvider ? 'fal.ai 不支持压缩率参数' : '仅 JPEG 和 WebP 支持压缩率'}
-        />
-      </label>
-      <label
-        className="relative flex flex-col gap-0.5"
-        onMouseEnter={moderationHint.show}
-        onMouseLeave={moderationHint.hide}
-        onTouchStart={moderationHint.startTouch}
-        onTouchEnd={moderationHint.clearTimer}
-        onTouchCancel={moderationHint.hide}
-        onClick={moderationHint.show}
-      >
-        <span className="text-gray-400 dark:text-gray-500 ml-1">审核</span>
-        <Select
-          value={moderationDisabled ? 'auto' : params.moderation}
-          onChange={(val) => {
-            if (!moderationDisabled) setParams({ moderation: val as any })
-          }}
-          options={[
-            { label: 'auto', value: 'auto' },
-            { label: 'low', value: 'low' },
-          ]}
-          disabled={moderationDisabled}
-          className={moderationDisabled
-            ? 'px-3 py-1.5 rounded-xl border border-gray-200/60 dark:border-white/[0.08] bg-gray-100/50 dark:bg-white/[0.05] opacity-50 cursor-not-allowed text-xs transition-all duration-200 shadow-sm'
-            : selectClass}
-        />
-        <ButtonTooltip
-          visible={moderationDisabled && moderationHint.visible}
-          text="fal.ai 不支持审核参数"
         />
       </label>
       <label

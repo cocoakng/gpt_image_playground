@@ -250,8 +250,6 @@ export function pickActualParams(source: unknown): Partial<TaskParams> {
   if (record.output_format === 'png' || record.output_format === 'jpeg' || record.output_format === 'webp') {
     actualParams.output_format = record.output_format
   }
-  if (typeof record.output_compression === 'number') actualParams.output_compression = record.output_compression
-  if (record.moderation === 'auto' || record.moderation === 'low') actualParams.moderation = record.moderation
   if (typeof record.n === 'number') actualParams.n = record.n
 
   return actualParams

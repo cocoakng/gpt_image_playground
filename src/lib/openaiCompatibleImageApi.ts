@@ -1,5 +1,6 @@
-import { DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
+import { type ApiProfile, type CustomProviderDefinition, type CustomProviderPollMapping, type CustomProviderResultMapping, type CustomProviderSubmitMapping, type ImageApiResponse, type ImageResponseItem, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { dataUrlToBlob, imageDataUrlToPngBlob, maskDataUrlToPngBlob } from './canvasImage'
+import { getClientId } from './clientId'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import {
   assertImageInputPayloadSize,
@@ -19,10 +20,6 @@ import {
 } from './imageApiShared'
 
 const PROMPT_REWRITE_GUARD_PREFIX = 'Use the following text as the complete prompt. Do not rewrite it:'
-
-function getStreamPartialImages(profile: ApiProfile): number {
-  return profile.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES
-}
 
 function appendQuery(path: string, query?: Record<string, string>): string {
   if (!query || !Object.keys(query).length) return path
@@ -187,19 +184,10 @@ function createResponsesImageTool(
     action: isEdit ? 'edit' : 'generate',
     size: params.size,
     output_format: params.output_format,
-    moderation: params.moderation,
-  }
-
-  if (profile.streamImages) {
-    tool.partial_images = getStreamPartialImages(profile)
   }
 
   if (!profile.codexCli) {
     tool.quality = params.quality
-  }
-
-  if (params.output_format !== 'png' && params.output_compression != null) {
-    tool.output_compression = params.output_compression
   }
 
   if (maskDataUrl) {
@@ -340,8 +328,6 @@ function eventToImageResponseItem(event: Record<string, unknown>): ImageResponse
     size: getStringValue(event, 'size'),
     quality: getStringValue(event, 'quality'),
     output_format: getStringValue(event, 'output_format'),
-    output_compression: getNumberValue(event, 'output_compression'),
-    moderation: getStringValue(event, 'moderation'),
   }
 }
 
@@ -601,25 +587,19 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
       formData.append('model', profile.model)
       formData.append('prompt', prompt)
       formData.append('size', params.size)
+      formData.append('response_format', 'b64_json')
       formData.append('output_format', params.output_format)
-      formData.append('moderation', params.moderation)
+      formData.append('user', getClientId())
 
       if (!profile.codexCli) {
         formData.append('quality', params.quality)
       }
 
-      if (params.output_format !== 'png' && params.output_compression != null) {
-        formData.append('output_compression', String(params.output_compression))
-      }
       if (params.n > 1) {
         formData.append('n', String(params.n))
       }
-      if (profile.responseFormatB64Json) {
-        formData.append('response_format', 'b64_json')
-      }
       if (profile.streamImages) {
         formData.append('stream', 'true')
-        formData.append('partial_images', String(getStreamPartialImages(profile)))
       }
 
       const imageBlobs: Blob[] = []
@@ -662,26 +642,20 @@ async function callImagesApiSingle(opts: CallApiOptions, profile: ApiProfile, cu
         model: profile.model,
         prompt,
         size: params.size,
+        response_format: 'b64_json',
         output_format: params.output_format,
-        moderation: params.moderation,
+        user: getClientId(),
       }
 
       if (!profile.codexCli) {
         body.quality = params.quality
       }
 
-      if (params.output_format !== 'png' && params.output_compression != null) {
-        body.output_compression = params.output_compression
-      }
       if (params.n > 1) {
         body.n = params.n
       }
-      if (profile.responseFormatB64Json) {
-        body.response_format = 'b64_json'
-      }
       if (profile.streamImages) {
         body.stream = true
-        body.partial_images = getStreamPartialImages(profile)
       }
 
       response = await fetch(buildApiUrl(profile.baseUrl, paths.generationPath, proxyConfig, useApiProxy), {
@@ -876,9 +850,7 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
   if (method !== 'GET') {
     if (contentType === 'multipart') {
       const formData = await createCustomMultipartBody(mapping, opts, context)
-      if (profile.responseFormatB64Json) {
-        formData.append('response_format', 'b64_json')
-      }
+      formData.append('response_format', 'b64_json')
       body = formData
     } else {
       assertImageInputPayloadSize(
@@ -887,7 +859,7 @@ async function submitCustomRequest(mapping: CustomProviderSubmitMapping, opts: C
       )
       headers['Content-Type'] = 'application/json'
       const resolved = resolveTemplateValue(mapping.body ?? {}, context)
-      if (profile.responseFormatB64Json && resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
+      if (resolved && typeof resolved === 'object' && !Array.isArray(resolved)) {
         (resolved as Record<string, unknown>).response_format = 'b64_json'
       }
       body = JSON.stringify(resolved)

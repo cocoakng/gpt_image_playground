@@ -30,12 +30,6 @@ export function normalizeParamsForSettings(
   if (activeProfile.provider === 'fal') {
     if (!options.hasInputImages && nextParams.size === 'auto') nextParams.size = DEFAULT_FAL_IMAGE_SIZE
     if (nextParams.quality === 'auto') nextParams.quality = 'high'
-    nextParams.moderation = DEFAULT_PARAMS.moderation
-    nextParams.output_compression = DEFAULT_PARAMS.output_compression
-  }
-
-  if (nextParams.output_format === 'png') {
-    nextParams.output_compression = DEFAULT_PARAMS.output_compression
   }
 
   return nextParams

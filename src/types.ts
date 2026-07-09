@@ -422,8 +422,6 @@ export interface ImageGenerationRequest {
   size: string
   quality: string
   output_format: string
-  moderation: string
-  output_compression?: number
   n?: number
 }
 
@@ -436,8 +434,6 @@ export interface ImageResponseItem {
   size?: string
   quality?: string
   output_format?: string
-  output_compression?: number
-  moderation?: string
 }
 
 export interface ImageApiResponse {
@@ -445,8 +441,6 @@ export interface ImageApiResponse {
   size?: string
   quality?: string
   output_format?: string
-  output_compression?: number
-  moderation?: string
   n?: number
 }
 

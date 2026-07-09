@@ -1,6 +1,7 @@
-import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, DEFAULT_STREAM_PARTIAL_IMAGES, type ApiProfile, type AppSettings, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
+import { DEFAULT_AGENT_MAX_TOOL_ROUNDS, type ApiProfile, type AppSettings, type ResponsesApiResponse, type ResponsesOutputItem, type TaskParams } from '../types'
 import { buildApiUrl, readClientDevProxyConfig, shouldUseApiProxy } from './devProxy'
 import { getApiErrorMessage, MIME_MAP, normalizeBase64Image, pickActualParams } from './imageApiShared'
+import { getClientId } from './clientId'
 
 export interface AgentApiMessage {
   role: 'user' | 'assistant'
@@ -88,18 +89,9 @@ function createImageTool(params: TaskParams, profile: ApiProfile, maskDataUrl?: 
     action: 'auto',
     size: params.size,
     output_format: params.output_format,
-    moderation: params.moderation,
   }
 
   tool.quality = params.quality
-
-  if (params.output_format !== 'png' && params.output_compression != null) {
-    tool.output_compression = params.output_compression
-  }
-
-  if (profile.streamImages) {
-    tool.partial_images = profile.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES
-  }
 
   if (maskDataUrl) {
     tool.input_image_mask = {
@@ -630,6 +622,7 @@ export async function callAgentResponsesApi(opts: {
       instructions: createAgentInstructions(settings),
       input,
       tools: createAgentTools(params, profile, settings, maskDataUrl),
+      user: getClientId(),
     }
     if (profile.streamImages) {
       body.stream = true
@@ -787,14 +780,7 @@ export async function callBatchImageSingle(opts: {
       action: referenceImageDataUrls.length > 0 ? 'auto' : 'generate',
       size: params.size,
       output_format: params.output_format,
-      moderation: params.moderation,
       quality: params.quality,
-    }
-    if (params.output_format !== 'png' && params.output_compression != null) {
-      tool.output_compression = params.output_compression
-    }
-    if (profile.streamImages) {
-      tool.partial_images = profile.streamPartialImages ?? DEFAULT_STREAM_PARTIAL_IMAGES
     }
 
     const body: Record<string, unknown> = {
