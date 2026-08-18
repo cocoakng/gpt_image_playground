@@ -10,6 +10,7 @@ import SearchBar from './components/SearchBar'
 import TaskGrid from './components/TaskGrid'
 import AgentWorkspace from './components/AgentWorkspace'
 import VideoWorkspace from './components/VideoWorkspace'
+import EcommerceWorkspace from './components/EcommerceWorkspace'
 import InputBar from './components/InputBar'
 import DetailModal from './components/DetailModal'
 import Lightbox from './components/Lightbox'
@@ -17,6 +18,7 @@ import SettingsModal from './components/SettingsModal'
 import ConfirmDialog from './components/ConfirmDialog'
 import Toast from './components/Toast'
 import MaskEditorModal from './components/MaskEditorModal'
+import ImageEditor from './components/ImageEditor'
 import ImageContextMenu from './components/ImageContextMenu'
 import SupportPromptModal from './components/SupportPromptModal'
 import { FavoriteCollectionPickerModal, FavoriteCollectionsView, ManageCollectionsModal } from './components/FavoriteCollections'
@@ -81,6 +83,8 @@ export default function App() {
         <AgentWorkspace />
       ) : appMode === 'video' ? (
         <VideoWorkspace />
+      ) : appMode === 'ecommerce' ? (
+        <EcommerceWorkspace />
       ) : (
         <main data-home-main data-drag-select-surface className="pb-48">
           <div className="safe-area-x max-w-7xl mx-auto">
@@ -89,7 +93,7 @@ export default function App() {
           </div>
         </main>
       )}
-      {appMode !== 'video' && <InputBar />}
+      {appMode !== 'video' && appMode !== 'ecommerce' && <InputBar />}
       <DetailModal />
       <Lightbox />
       <SettingsModal />
@@ -99,6 +103,7 @@ export default function App() {
       <ManageCollectionsModal />
       <Toast />
       <MaskEditorModal />
+      <ImageEditor />
       <ImageContextMenu />
     </>
   )

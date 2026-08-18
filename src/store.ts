@@ -891,6 +891,16 @@ interface AppState {
   clearMaskDraft: () => void
   maskEditorImageId: string | null
   setMaskEditorImageId: (id: string | null) => void
+  editorImageId: string | null
+  editorImageUrl: string | null
+  setEditorImage: (id: string | null, url?: string | null) => void
+  /** Ecommerce result images (dataUrls) */
+  ecommerceImages: string[]
+  /** Update a specific ecommerce result image by index */
+  updateEcommerceImage: (index: number, dataUrl: string) => void
+  /** Callback for when editor saves, receives the new dataUrl */
+  onEditorSave: ((dataUrl: string) => void) | null
+  setOnEditorSave: (cb: ((dataUrl: string) => void) | null) => void
   galleryInputDraft: AgentInputDraft | null
 
   // 参数
@@ -1262,7 +1272,7 @@ export const useStore = create<AppState>()(
       // Mode
       appMode: 'gallery',
       setAppMode: (appMode) => {
-        if (appMode === 'gallery' || appMode === 'video') {
+        if (appMode === 'gallery' || appMode === 'video' || appMode === 'ecommerce') {
           const state = get()
           const agentInputDrafts = saveActiveAgentInputDrafts(state)
           const galleryInputDraft = saveGalleryInputDraft(state)
@@ -1426,6 +1436,22 @@ export const useStore = create<AppState>()(
         if (maskEditorImageId) dismissAllTooltips()
         set((s) => syncActiveInputDraft(s, { maskEditorImageId }))
       },
+      editorImageId: null,
+      editorImageUrl: null,
+      setEditorImage: (editorImageId, editorImageUrl) => {
+        if (editorImageId) dismissAllTooltips()
+        set({ editorImageId, editorImageUrl: editorImageUrl ?? null })
+      },
+      ecommerceImages: [],
+      updateEcommerceImage: (index, dataUrl) => {
+        set((s) => {
+          const newImages = [...s.ecommerceImages]
+          newImages[index] = dataUrl
+          return { ecommerceImages: newImages }
+        })
+      },
+      onEditorSave: null,
+      setOnEditorSave: (cb) => set({ onEditorSave: cb }),
       galleryInputDraft: null,
 
       // Params

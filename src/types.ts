@@ -1,7 +1,7 @@
 // ===== 设置 =====
 
 export type ApiMode = 'images' | 'responses'
-export type AppMode = 'gallery' | 'agent' | 'video'
+export type AppMode = 'gallery' | 'agent' | 'video' | 'ecommerce'
 export type ReferenceImageEditAction = 'ask' | 'replace-reference' | 'add-mask'
 export const ZIP_DOWNLOAD_ROUTE_VALUES = [
   'task-selection',
@@ -555,4 +555,115 @@ export interface ExportData {
     mimeType?: string
     storedAt?: number
   }>
+}
+
+// ===== 电商套图 =====
+
+export type EcommerceTemplateCategory = 'white' | 'scene' | 'model' | 'creative'
+export type EcommerceSceneId = 'pure' | 'desk' | 'outdoor' | 'studio' | 'nature' | 'festival' | 'custom'
+export type EcommerceSize = '1:1' | '3:4' | '4:3' | '16:9' | 'custom'
+export type EcommerceQuality = 'standard' | 'hd' | '4k'
+export type EcommerceTaskStatus = 'pending' | 'generating' | 'done' | 'error'
+
+export interface EcommerceTemplate {
+  id: string
+  name: string
+  category: EcommerceTemplateCategory
+  prompt: string
+  previewUrl: string
+}
+
+export interface EcommerceSceneOption {
+  id: EcommerceSceneId
+  name: string
+  prompt: string
+}
+
+export interface EcommerceTask {
+  id: string
+  productName: string
+  category: string
+  sourceImageIds: string[]
+  template: string
+  scene: EcommerceSceneId
+  prompt: string
+  size: EcommerceSize
+  quality: EcommerceQuality
+  count: number
+  outputImageIds: string[]
+  status: EcommerceTaskStatus
+  createdAt: number
+  updatedAt: number
+  error?: string
+}
+
+export interface EcommerceConfig {
+  productName: string
+  category: string
+  template: string
+  scene: EcommerceSceneId
+  prompt: string
+  size: EcommerceSize
+  quality: EcommerceQuality
+  count: number
+}
+
+export const DEFAULT_ECOMMERCE_CONFIG: EcommerceConfig = {
+  productName: '',
+  category: '',
+  template: 'white',
+  scene: 'pure',
+  prompt: '',
+  size: '1:1',
+  quality: 'standard',
+  count: 4,
+}
+
+// ===== 电商预设 =====
+
+export interface PlatformPresetBatch {
+  label: string
+  template: string
+  scene?: EcommerceSceneId
+  count: number
+}
+
+export interface PlatformPreset {
+  id: string
+  name: string
+  icon: string
+  description: string
+  size: EcommerceSize
+  quality: EcommerceQuality
+  count: number
+  template: string
+  scene?: EcommerceSceneId
+  batches?: PlatformPresetBatch[]
+  promptSuffix?: string
+}
+
+export interface StyleTemplate {
+  id: string
+  name: string
+  nameEn: string
+  icon: string
+  prompt: string
+  colorTone?: string
+  lighting?: string
+  mood?: string
+}
+
+export interface CategoryKeywordSet {
+  categoryId: string
+  keywords: string[]
+  styleModifiers?: Record<string, string>
+}
+
+export interface PromptTemplate {
+  id: string
+  name: string
+  categoryId?: string
+  styleId?: string
+  prompt: string
+  description: string
 }
