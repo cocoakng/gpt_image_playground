@@ -5537,7 +5537,7 @@ export async function importData(file: File, options: ImportOptions = { importCo
       state.setSettings(mergeImportedSettings(state.settings, data.settings))
       const importedVideoParams = data.videoParams && typeof data.videoParams === 'object'
         ? {
-            resolution: ['480p', '720p', '1080p'].includes(data.videoParams.resolution) ? data.videoParams.resolution : DEFAULT_VIDEO_PARAMS.resolution,
+            resolution: ['480p', '720p', '1080p', '4k'].includes(data.videoParams.resolution) ? data.videoParams.resolution : DEFAULT_VIDEO_PARAMS.resolution,
             duration: typeof data.videoParams.duration === 'number' ? data.videoParams.duration : DEFAULT_VIDEO_PARAMS.duration,
             ratio: ['16:9', '9:16', '1:1', '4:3', '3:4', '21:9', 'adaptive'].includes(data.videoParams.ratio) ? data.videoParams.ratio : DEFAULT_VIDEO_PARAMS.ratio,
             seed: typeof data.videoParams.seed === 'number' ? data.videoParams.seed : undefined,

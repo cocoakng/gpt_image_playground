@@ -107,8 +107,8 @@ export async function submitVideoTask(opts: CallVideoApiOptions): Promise<{ task
       body.mode = 'r2v'
     }
   }
-  // ===== doubao-seedance 模型 =====
-  else if (model.startsWith('doubao-seedance')) {
+  // ===== doubao-seedance / SD 模型 =====
+  else if (model.startsWith('doubao-seedance') || model === 'sd-2-5' || model === 'sd-2-5-1080p' || model === 'sd-2-5-480p') {
     body.prompt = opts.prompt
     body.seconds = String(opts.params.duration || 5)
 

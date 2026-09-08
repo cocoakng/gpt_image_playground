@@ -161,7 +161,7 @@ export type VideoModel =
 export interface VideoParams {
   /** 生成模型 */
   model?: string
-  resolution: '480p' | '720p' | '1080p'
+  resolution: '480p' | '720p' | '1080p' | '4k'
   duration: number
   ratio: '16:9' | '9:16' | '1:1' | '4:3' | '3:4' | '21:9' | 'adaptive'
   /** 随机种子，用于可重复生成 */
